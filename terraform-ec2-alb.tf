@@ -281,20 +281,13 @@ log_info "Database Name: $DB_NAME"
 log_info "Database User: $DB_USER"
 
 # Step 6: Download and deploy application
-log_info "Downloading application code from S3..."
+log_info "Cloning application code from GitHub..."
 cd /opt/done-deal-digital
-aws s3 cp s3://done-deal-digital-prod/backend-code/ddd-backend.tar.gz /tmp/ddd-backend.tar.gz \
-  --region "$AWS_REGION" >> "$LOGFILE" 2>&1 || {
-  log_error "Failed to download application code"
+git clone https://github.com/feadycrocka/done-deal-digital-backend.git . >> "$LOGFILE" 2>&1 || {
+  log_error "Failed to clone application code from GitHub"
   exit 1
 }
 
-tar -xzf /tmp/ddd-backend.tar.gz -C /opt/done-deal-digital >> "$LOGFILE" 2>&1 || {
-  log_error "Failed to extract application code"
-  exit 1
-}
-
-rm /tmp/ddd-backend.tar.gz
 chown -R ec2-user:ec2-user /opt/done-deal-digital
 log_success "Application code deployed"
 
