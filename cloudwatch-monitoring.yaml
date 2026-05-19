@@ -1,0 +1,149 @@
+# CloudWatch Agent Configuration for Done Deal Digital Backend
+# Place this at /opt/aws/amazon-cloudwatch-agent/etc/config.json after editing
+
+{
+  "metrics": {
+    "namespace": "DoneDealDigital/Backend",
+    "metrics_collected": {
+      "cpu": {
+        "measurement": [
+          {
+            "name": "cpu_usage_idle",
+            "rename": "CPU_IDLE",
+            "unit": "Percent"
+          },
+          {
+            "name": "cpu_usage_iowait",
+            "rename": "CPU_IOWAIT",
+            "unit": "Percent"
+          },
+          "cpu_usage_system",
+          "cpu_usage_active"
+        ],
+        "metrics_collection_interval": 60,
+        "aggregation_dimensions": [
+          ["InstanceId"],
+          ["InstanceId", "ImageId"]
+        ]
+      },
+      "mem": {
+        "measurement": [
+          {
+            "name": "mem_used_percent",
+            "rename": "MEM_USED_PERCENT",
+            "unit": "Percent"
+          },
+          "mem_available",
+          "mem_used"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "disk": {
+        "measurement": [
+          {
+            "name": "used_percent",
+            "rename": "DISK_USED_PERCENT",
+            "unit": "Percent"
+          },
+          "inodes_free"
+        ],
+        "metrics_collection_interval": 60,
+        "resources": [
+          "*"
+        ],
+        "aggregation_dimensions": [
+          ["InstanceId", "path"],
+          ["InstanceId", "device", "fstype"]
+        ]
+      },
+      "netstat": {
+        "measurement": [
+          {
+            "name": "tcp_established",
+            "rename": "TCP_ESTABLISHED",
+            "unit": "Count"
+          },
+          {
+            "name": "tcp_time_wait",
+            "rename": "TCP_TIME_WAIT",
+            "unit": "Count"
+          }
+        ],
+        "metrics_collection_interval": 60,
+        "aggregation_dimensions": [
+          ["InstanceId"]
+        ]
+      },
+      "processes": {
+        "measurement": [
+          {
+            "name": "running",
+            "rename": "PROCESSES_RUNNING",
+            "unit": "Count"
+          },
+          {
+            "name": "sleeping",
+            "unit": "Count"
+          },
+          {
+            "name": "total",
+            "unit": "Count"
+          }
+        ],
+        "metrics_collection_interval": 60
+      }
+    },
+    "append_dimensions": {
+      "AutoScalingGroupName": "${aws:AutoScalingGroupName}",
+      "Environment": "production",
+      "Service": "done-deal-digital-backend"
+    },
+    "aggregation_dimensions": [
+      ["InstanceId"],
+      ["InstanceId", "AutoScalingGroupName"]
+    ]
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/done-deal-digital/application.log",
+            "log_group_name": "/aws/done-deal-digital/backend/application",
+            "log_stream_name": "{instance_id}",
+            "timestamp_format": "%Y-%m-%d %H:%M:%S",
+            "multi_line_start_pattern": "{datetime_format}",
+            "retention_in_days": 30
+          },
+          {
+            "file_path": "/var/log/done-deal-digital/error.log",
+            "log_group_name": "/aws/done-deal-digital/backend/errors",
+            "log_stream_name": "{instance_id}",
+            "timestamp_format": "%Y-%m-%d %H:%M:%S",
+            "retention_in_days": 30
+          },
+          {
+            "file_path": "/var/log/done-deal-digital/access.log",
+            "log_group_name": "/aws/done-deal-digital/backend/access",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": 7
+          },
+          {
+            "file_path": "/var/log/nginx/access.log",
+            "log_group_name": "/aws/done-deal-digital/nginx/access",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": 7
+          },
+          {
+            "file_path": "/var/log/nginx/error.log",
+            "log_group_name": "/aws/done-deal-digital/nginx/error",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": 7
+          }
+        ]
+      }
+    },
+    "log_stream_name": "default_log_stream",
+    "force_flush_interval": 15
+  }
+}
