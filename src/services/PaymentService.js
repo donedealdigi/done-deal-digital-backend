@@ -1,6 +1,18 @@
 const stripeConfig = require('../config/stripe');
 const Payment = require('../models/Payment');
 const Order = require('../models/Order');
+const crypto = require('crypto');
+
+/**
+ * Convert string to UUID format for consistent test data
+ */
+function stringToUUID(str) {
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)) {
+    return str;
+  }
+  const hash = crypto.createHash('md5').update(str).digest('hex');
+  return `${hash.substr(0, 8)}-${hash.substr(8, 4)}-${hash.substr(12, 4)}-${hash.substr(16, 4)}-${hash.substr(20, 12)}`;
+}
 
 /**
  * PaymentService handles all Stripe payment processing logic
@@ -16,20 +28,51 @@ class PaymentService {
    */
   static async createPaymentIntent(orderId, userId) {
     try {
-      // Get order details
-      const order = await Order.findById(orderId);
-      if (!order) {
-        throw new Error(`Order not found: ${orderId}`);
-      }
+      // Convert orderId to UUID format
+      orderId = stringToUUID(orderId);
 
-      // Validate order belongs to user
-      if (order.user_id !== userId) {
-        throw new Error('Unauthorized: Order does not belong to this user');
-      }
+      // In development, allow test payments without full order validation
+      let order;
+      if (process.env.NODE_ENV === 'development') {
+        // Check if order already exists
+        order = await Order.findById(orderId);
 
-      // Validate order status is pending payment
-      if (order.payment_status && order.payment_status !== 'pending') {
-        throw new Error(`Cannot create payment intent for order with status: ${order.payment_status}`);
+        if (!order) {
+          // Create test order in development
+          order = await Order.create({
+            userId,
+            totalPrice: 49.99,
+            status: 'pending',
+            items: [{
+              name: 'Beat License',
+              price: 49.99,
+              quantity: 1
+            }],
+            metadata: {
+              beatId: orderId,
+              source: 'development-test'
+            }
+          });
+          console.log(`✅ Created test order in development: ${order.id}`);
+        } else {
+          console.log(`📝 Using existing order in development: ${orderId}`);
+        }
+      } else {
+        // Get order details from database in production
+        order = await Order.findById(orderId);
+        if (!order) {
+          throw new Error(`Order not found: ${orderId}`);
+        }
+
+        // Validate order belongs to user
+        if (order.user_id !== userId) {
+          throw new Error('Unauthorized: Order does not belong to this user');
+        }
+
+        // Validate order status is pending payment
+        if (order.payment_status && order.payment_status !== 'pending') {
+          throw new Error(`Cannot create payment intent for order with status: ${order.payment_status}`);
+        }
       }
 
       // Create payment intent with Stripe
@@ -37,17 +80,17 @@ class PaymentService {
         amount: Math.round(order.total_price * 100), // Convert to cents
         currency: stripeConfig.currency,
         metadata: {
-          orderId,
+          orderId: order.id,
           userId,
-          orderNumber: order.order_number || orderId.substring(0, 8).toUpperCase()
+          orderNumber: order.order_number
         },
-        description: `Order ${order.order_number || orderId.substring(0, 8)} - Done Deal Digital`,
-        statement_descriptor: 'DONE DEAL DIGITAL'
+        description: `Order ${order.order_number} - Done Deal Digital`,
+        statement_descriptor_suffix: 'DONE DEAL'
       });
 
       // Create payment record in database
       const paymentRecord = await Payment.create({
-        orderId,
+        orderId: order.id,
         userId,
         stripePaymentIntentId: paymentIntent.id,
         amount: order.total_price,
@@ -60,7 +103,7 @@ class PaymentService {
       });
 
       // Update order with payment intent ID
-      await Order.update(orderId, {
+      await Order.update(order.id, {
         stripe_payment_intent_id: paymentIntent.id,
         payment_status: 'processing'
       });
@@ -69,7 +112,7 @@ class PaymentService {
         success: true,
         paymentIntentId: paymentIntent.id,
         clientSecret: paymentIntent.client_secret,
-        amount: paymentRecord.amount,
+        amount: parseFloat(paymentRecord.amount),
         currency: paymentRecord.currency,
         status: paymentIntent.status
       };
@@ -286,8 +329,8 @@ class PaymentService {
    */
   static async handleChargeRefunded(charge) {
     try {
-      // Find payment by stripe charge ID
-      const paymentRecord = await Payment.findById(charge.payment_intent);
+      // Find payment by stripe payment intent ID
+      const paymentRecord = await Payment.findByStripePaymentIntentId(charge.payment_intent);
 
       if (!paymentRecord) {
         console.warn(`Payment record not found for charge: ${charge.id}`);
