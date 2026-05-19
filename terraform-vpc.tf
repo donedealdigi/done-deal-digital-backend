@@ -28,7 +28,6 @@ provider "aws" {
       Project     = "DoneDealDigital"
       Environment = var.environment
       ManagedBy   = "Terraform"
-      CreatedAt   = timestamp()
     }
   }
 }
@@ -68,6 +67,12 @@ variable "max_instances" {
   description = "Maximum number of instances"
   type        = number
   default     = 4
+}
+
+variable "ssh_cidr_block" {
+  description = "CIDR block for SSH access (your IP in /32 format, e.g., 203.0.113.45/32)"
+  type        = string
+  default     = "0.0.0.0/0" # WARNING: This allows SSH from anywhere. Change to your IP.
 }
 
 # VPC
@@ -235,7 +240,7 @@ resource "aws_security_group" "ec2" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["YOUR_IP/32"] # Change to your IP
+    cidr_blocks = [var.ssh_cidr_block]
   }
 
   egress {
