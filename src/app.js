@@ -45,6 +45,15 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ALB Health Check Endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV
+  });
+});
+
 // ===== API ROUTES =====
 app.use('/api/auth', authRoutes);
 app.use('/api/users', authenticate, userRoutes);

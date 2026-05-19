@@ -8,7 +8,11 @@
     "dev": "nodemon src/app.js",
     "test": "jest --detectOpenHandles",
     "migrate": "node migrations/run.js",
-    "seed": "node migrations/seed.js"
+    "seed": "node migrations/seed.js",
+    "deploy": "bash deploy.sh",
+    "setup-ec2": "bash ec2-setup.sh",
+    "production": "NODE_ENV=production node src/app.js",
+    "health-check": "curl -f http://localhost:5000/api/health"
   },
   "keywords": [
     "ecommerce",
