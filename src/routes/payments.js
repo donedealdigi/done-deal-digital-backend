@@ -212,10 +212,66 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       });
     }
 
-    // If this is a service deposit (identified by metadata.type), handle it here
-    // before delegating to PaymentService (which expects order-linked payments).
+    // If this is a service deposit or merch order (identified by metadata.type),
+    // handle it here before delegating to PaymentService.
     const obj = event.data?.object;
-    const isDeposit = obj?.metadata?.type === 'service_deposit';
+    const intentType = obj?.metadata?.type;
+    const isDeposit = intentType === 'service_deposit';
+    const isMerchOrder = intentType === 'merch_order';
+
+    if (isMerchOrder) {
+      const MerchOrder = require('../models/MerchOrder');
+      const PrintfulService = require('../services/PrintfulService');
+      try {
+        if (event.type === 'payment_intent.succeeded') {
+          const order = await MerchOrder.markPaid(obj.id);
+          if (order) {
+            // Submit to Printful for fulfillment (best-effort; failures logged but webhook returns 200)
+            try {
+              const ship = order.shipping_address || {};
+              const printfulOrder = await PrintfulService.createOrder({
+                external_id: order.id,
+                recipient: {
+                  name: order.customer_name || ship.name,
+                  email: order.customer_email,
+                  address1: ship.address1,
+                  address2: ship.address2 || null,
+                  city: ship.city,
+                  state_code: ship.state_code,
+                  country_code: ship.country_code,
+                  zip: ship.zip,
+                  phone: ship.phone || null
+                },
+                items: (order.items || []).map(it => ({
+                  sync_variant_id: it.sync_variant_id,
+                  quantity: it.quantity,
+                  retail_price: it.retail_price ? String(it.retail_price) : undefined,
+                  name: it.name
+                })),
+                retail_costs: {
+                  currency: order.currency || 'USD',
+                  subtotal: String(order.subtotal),
+                  shipping: String(order.shipping_cost),
+                  tax: String(order.tax),
+                  total: String(order.total)
+                },
+                confirm: true
+              });
+              await MerchOrder.markSubmitted(order.id, String(printfulOrder.id));
+              console.log(`✅ Merch order ${order.id} submitted to Printful as ${printfulOrder.id}`);
+            } catch (pferr) {
+              console.error(`❌ Printful submission failed for merch order ${order.id}:`, pferr.message);
+              // Don't throw — payment is captured, just needs manual fulfillment fix
+            }
+          }
+        } else if (event.type === 'payment_intent.payment_failed' || event.type === 'charge.failed') {
+          await MerchOrder.markFailed(obj.id || obj.payment_intent);
+        }
+      } catch (e) {
+        console.error('❌ Merch webhook handling error:', e.message);
+      }
+      return res.status(200).json({ success: true, received: true, eventType: event.type, handled: 'merch_order' });
+    }
 
     if (isDeposit) {
       try {

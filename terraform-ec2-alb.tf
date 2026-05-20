@@ -339,7 +339,7 @@ log_success "Environment file created"
 # Targeted, idempotent (IF NOT EXISTS / DROP NOT NULL guards). Does NOT use run.js
 # because the old 001/002 migrations have non-PG syntax that would error.
 log_info "Applying incremental migrations (003, 004)..."
-for MIGRATION in 003_service_deposits.sql 004_paypal_deposit_columns.sql; do
+for MIGRATION in 003_service_deposits.sql 004_paypal_deposit_columns.sql 005_merch_orders.sql; do
   if [ -f "/opt/done-deal-digital/migrations/$MIGRATION" ]; then
     log_info "  -> $MIGRATION"
     PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f "/opt/done-deal-digital/migrations/$MIGRATION" >> "$LOGFILE" 2>&1 || log_error "$MIGRATION failed (continuing boot)"
