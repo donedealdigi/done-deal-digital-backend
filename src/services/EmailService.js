@@ -69,6 +69,7 @@ function depositReceipt({ customerName, customerEmail, serviceName, amount, paym
   const amountStr = `$${Number(amount).toFixed(2)}`;
   return {
     to: customerEmail,
+    replyTo: process.env.REPLY_TO_EMAIL || 'donedealdigital@gmail.com',
     subject: `Deposit received — ${serviceName} | Done Deal Digital`,
     text: `${greeting},
 
@@ -108,7 +109,7 @@ donedealdigital.com
 function depositNotification({ customerName, customerEmail, serviceName, amount, paymentIntentId, notes }) {
   const amountStr = `$${Number(amount).toFixed(2)}`;
   return {
-    to: process.env.NOTIFY_EMAIL || 'info@donedealdigital.com',
+    to: process.env.NOTIFY_EMAIL || 'donedealdigital@gmail.com',
     replyTo: customerEmail,
     subject: `NEW deposit: ${amountStr} — ${serviceName} (${customerEmail})`,
     text: `New service deposit received.
