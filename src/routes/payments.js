@@ -571,23 +571,30 @@ router.post('/service-deposit/create-intent', async (req, res) => {
 
 /* ===== PayPal flow for service deposits ===== */
 
+const axios = require('axios');
+
 async function getPaypalAccessTokenForDeposit() {
   const paypalConfig = require('../config/paypal');
-  const r = await fetch(`${paypalConfig.apiUrl}/v1/oauth2/token`, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': 'Basic ' + Buffer.from(`${paypalConfig.clientId}:${paypalConfig.clientSecret}`).toString('base64')
-    },
-    body: 'grant_type=client_credentials'
-  });
-  if (!r.ok) {
-    const err = await r.text();
-    throw new Error(`PayPal token request failed: ${r.status} ${err}`);
+  try {
+    const res = await axios.post(
+      `${paypalConfig.apiUrl}/v1/oauth2/token`,
+      'grant_type=client_credentials',
+      {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        auth: {
+          username: paypalConfig.clientId,
+          password: paypalConfig.clientSecret
+        }
+      }
+    );
+    return { accessToken: res.data.access_token, apiUrl: paypalConfig.apiUrl };
+  } catch (err) {
+    const detail = err.response ? `${err.response.status} ${JSON.stringify(err.response.data)}` : err.message;
+    throw new Error(`PayPal token request failed: ${detail}`);
   }
-  const data = await r.json();
-  return { accessToken: data.access_token, apiUrl: paypalConfig.apiUrl };
 }
 
 /**
@@ -607,28 +614,30 @@ router.post('/service-deposit/paypal/create-order', async (req, res) => {
     const finalDepositType = ['fixed', 'package', 'custom'].includes(depositType) ? depositType : 'fixed';
 
     const { accessToken, apiUrl } = await getPaypalAccessTokenForDeposit();
-    const r = await fetch(`${apiUrl}/v2/checkout/orders`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-      body: JSON.stringify({
-        intent: 'CAPTURE',
-        purchase_units: [{
-          amount: { currency_code: 'USD', value: amount.toFixed(2) },
-          description: `Service Deposit: ${serviceName}`.substring(0, 127),
-          custom_id: `deposit_${serviceSlug}_${Date.now()}`.substring(0, 127)
-        }],
-        application_context: {
-          brand_name: 'Done Deal Digital',
-          user_action: 'PAY_NOW',
-          shipping_preference: 'NO_SHIPPING'
-        }
-      })
-    });
-    if (!r.ok) {
-      const err = await r.text();
-      throw new Error(`PayPal create-order failed: ${r.status} ${err}`);
+    let data;
+    try {
+      const res = await axios.post(
+        `${apiUrl}/v2/checkout/orders`,
+        {
+          intent: 'CAPTURE',
+          purchase_units: [{
+            amount: { currency_code: 'USD', value: amount.toFixed(2) },
+            description: `Service Deposit: ${serviceName}`.substring(0, 127),
+            custom_id: `deposit_${serviceSlug}_${Date.now()}`.substring(0, 127)
+          }],
+          application_context: {
+            brand_name: 'Done Deal Digital',
+            user_action: 'PAY_NOW',
+            shipping_preference: 'NO_SHIPPING'
+          }
+        },
+        { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` } }
+      );
+      data = res.data;
+    } catch (err) {
+      const detail = err.response ? `${err.response.status} ${JSON.stringify(err.response.data)}` : err.message;
+      throw new Error(`PayPal create-order failed: ${detail}`);
     }
-    const data = await r.json();
 
     await ServiceDeposit.createPaypal({
       customerEmail: email,
@@ -662,15 +671,18 @@ router.post('/service-deposit/paypal/capture', async (req, res) => {
     if (!orderId) return res.status(400).json({ success: false, error: 'orderId required' });
 
     const { accessToken, apiUrl } = await getPaypalAccessTokenForDeposit();
-    const r = await fetch(`${apiUrl}/v2/checkout/orders/${orderId}/capture`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` }
-    });
-    if (!r.ok) {
-      const err = await r.text();
-      throw new Error(`PayPal capture failed: ${r.status} ${err}`);
+    let data;
+    try {
+      const res = await axios.post(
+        `${apiUrl}/v2/checkout/orders/${orderId}/capture`,
+        {},
+        { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` } }
+      );
+      data = res.data;
+    } catch (err) {
+      const detail = err.response ? `${err.response.status} ${JSON.stringify(err.response.data)}` : err.message;
+      throw new Error(`PayPal capture failed: ${detail}`);
     }
-    const data = await r.json();
     const captureId = data.purchase_units?.[0]?.payments?.captures?.[0]?.id || null;
 
     if (data.status === 'COMPLETED') {
