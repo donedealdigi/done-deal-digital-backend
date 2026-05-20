@@ -12,6 +12,7 @@ const beatRoutes = require('./routes/beats');
 const orderRoutes = require('./routes/orders');
 const paymentRoutes = require('./routes/payments');
 const merchRoutes = require('./routes/merch');
+const newsletterRoutes = require('./routes/newsletter');
 const downloadRoutes = require('./routes/downloads');
 const chatRoutes = require('./routes/chat');
 
@@ -63,6 +64,7 @@ app.use('/api/beats', beatRoutes);
 app.use('/api/orders', authenticate, orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/merch', merchRoutes);
+app.use('/api/newsletter', newsletterRoutes);
 app.use('/api/downloads', authenticate, downloadRoutes);
 app.use('/api/chat', chatRoutes);
 
