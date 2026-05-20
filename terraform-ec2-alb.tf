@@ -246,8 +246,9 @@ npm --version >> "$LOGFILE" 2>&1
 
 # Step 3: Install dependencies
 log_info "Installing system dependencies..."
-yum install -y git postgresql15-contrib jq awscliv2 >> "$LOGFILE" 2>&1 || log_error "Dependency installation failed"
-amazon-linux-extras install -y nginx1 >> "$LOGFILE" 2>&1 || log_error "Nginx installation failed"
+yum install -y git jq awscliv2 >> "$LOGFILE" 2>&1 || log_error "Dependency installation failed"
+amazon-linux-extras install -y nginx1 postgresql15 >> "$LOGFILE" 2>&1 || log_error "Nginx/postgresql15 installation failed"
+yum install -y postgresql15-contrib >> "$LOGFILE" 2>&1 || log_info "postgresql15-contrib not strictly required, skipping if unavailable"
 log_success "Dependencies installed"
 
 # Step 4: Create app directory
