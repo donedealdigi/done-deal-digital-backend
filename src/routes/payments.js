@@ -569,4 +569,134 @@ router.post('/service-deposit/create-intent', async (req, res) => {
   }
 });
 
+/* ===== PayPal flow for service deposits ===== */
+
+async function getPaypalAccessTokenForDeposit() {
+  const paypalConfig = require('../config/paypal');
+  const r = await fetch(`${paypalConfig.apiUrl}/v1/oauth2/token`, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + Buffer.from(`${paypalConfig.clientId}:${paypalConfig.clientSecret}`).toString('base64')
+    },
+    body: 'grant_type=client_credentials'
+  });
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(`PayPal token request failed: ${r.status} ${err}`);
+  }
+  const data = await r.json();
+  return { accessToken: data.access_token, apiUrl: paypalConfig.apiUrl };
+}
+
+/**
+ * POST /api/payments/service-deposit/paypal/create-order
+ * Body: { amount, email, name, serviceSlug, serviceName, depositType, notes }
+ * Returns: { orderId } — used by the PayPal Smart Buttons SDK to render approval flow
+ */
+router.post('/service-deposit/paypal/create-order', async (req, res) => {
+  try {
+    const { amount, email, name, serviceSlug, serviceName, depositType, notes } = req.body;
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+      return res.status(400).json({ success: false, error: 'amount required and positive' });
+    }
+    if (amount > 10000) return res.status(400).json({ success: false, error: 'amount exceeds $10,000 limit' });
+    if (!email || !email.includes('@')) return res.status(400).json({ success: false, error: 'valid email required' });
+    if (!serviceSlug || !serviceName) return res.status(400).json({ success: false, error: 'serviceSlug and serviceName required' });
+    const finalDepositType = ['fixed', 'package', 'custom'].includes(depositType) ? depositType : 'fixed';
+
+    const { accessToken, apiUrl } = await getPaypalAccessTokenForDeposit();
+    const r = await fetch(`${apiUrl}/v2/checkout/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+      body: JSON.stringify({
+        intent: 'CAPTURE',
+        purchase_units: [{
+          amount: { currency_code: 'USD', value: amount.toFixed(2) },
+          description: `Service Deposit: ${serviceName}`.substring(0, 127),
+          custom_id: `deposit_${serviceSlug}_${Date.now()}`.substring(0, 127)
+        }],
+        application_context: {
+          brand_name: 'Done Deal Digital',
+          user_action: 'PAY_NOW',
+          shipping_preference: 'NO_SHIPPING'
+        }
+      })
+    });
+    if (!r.ok) {
+      const err = await r.text();
+      throw new Error(`PayPal create-order failed: ${r.status} ${err}`);
+    }
+    const data = await r.json();
+
+    await ServiceDeposit.createPaypal({
+      customerEmail: email,
+      customerName: name || null,
+      serviceSlug,
+      serviceName,
+      depositType: finalDepositType,
+      amount,
+      currency: 'USD',
+      status: 'pending',
+      paypalOrderId: data.id,
+      notes: notes || null,
+      metadata: { source: 'donedealdigital.com', provider: 'paypal' }
+    });
+
+    res.status(200).json({ success: true, data: { orderId: data.id, status: data.status } });
+  } catch (error) {
+    console.error('❌ Deposit PayPal create-order error:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to create PayPal order' });
+  }
+});
+
+/**
+ * POST /api/payments/service-deposit/paypal/capture
+ * Body: { orderId }
+ * Captures the approved PayPal order, marks deposit succeeded, fires emails.
+ */
+router.post('/service-deposit/paypal/capture', async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ success: false, error: 'orderId required' });
+
+    const { accessToken, apiUrl } = await getPaypalAccessTokenForDeposit();
+    const r = await fetch(`${apiUrl}/v2/checkout/orders/${orderId}/capture`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (!r.ok) {
+      const err = await r.text();
+      throw new Error(`PayPal capture failed: ${r.status} ${err}`);
+    }
+    const data = await r.json();
+    const captureId = data.purchase_units?.[0]?.payments?.captures?.[0]?.id || null;
+
+    if (data.status === 'COMPLETED') {
+      const deposit = await ServiceDeposit.markPaypalCaptured(orderId, captureId);
+      if (deposit) {
+        const args = {
+          customerName: deposit.customer_name,
+          customerEmail: deposit.customer_email,
+          serviceName: deposit.service_name,
+          amount: deposit.amount,
+          paymentIntentId: `PayPal:${orderId}`,
+          notes: deposit.notes
+        };
+        EmailService.sendMail(EmailService.templates.depositReceipt(args)).catch(e => console.error('PayPal receipt email failed', e));
+        EmailService.sendMail(EmailService.templates.depositNotification(args)).catch(e => console.error('PayPal notification email failed', e));
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { orderId: data.id, status: data.status, captureId }
+    });
+  } catch (error) {
+    console.error('❌ Deposit PayPal capture error:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to capture PayPal order' });
+  }
+});
+
 module.exports = router;

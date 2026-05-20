@@ -335,17 +335,17 @@ chown ec2-user:ec2-user /opt/done-deal-digital/.env.production
 chmod 600 /opt/done-deal-digital/.env.production
 log_success "Environment file created"
 
-# Step 8a: Apply incremental schema additions (service_deposits table).
-# Targeted, idempotent (IF NOT EXISTS guards). Does NOT use run.js because
-# the old 001/002 migrations have non-PG syntax that would error.
-log_info "Applying service_deposits migration..."
-DATABASE_URL_VAL="postgresql://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
-if [ -f /opt/done-deal-digital/migrations/003_service_deposits.sql ]; then
-  PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f /opt/done-deal-digital/migrations/003_service_deposits.sql >> "$LOGFILE" 2>&1 || log_error "003_service_deposits migration failed (continuing boot)"
-  log_success "Service deposits migration applied (or already present)"
-else
-  log_info "No 003 migration file present — skipping"
-fi
+# Step 8a: Apply incremental schema additions (service_deposits + paypal columns).
+# Targeted, idempotent (IF NOT EXISTS / DROP NOT NULL guards). Does NOT use run.js
+# because the old 001/002 migrations have non-PG syntax that would error.
+log_info "Applying incremental migrations (003, 004)..."
+for MIGRATION in 003_service_deposits.sql 004_paypal_deposit_columns.sql; do
+  if [ -f "/opt/done-deal-digital/migrations/$MIGRATION" ]; then
+    log_info "  -> $MIGRATION"
+    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f "/opt/done-deal-digital/migrations/$MIGRATION" >> "$LOGFILE" 2>&1 || log_error "$MIGRATION failed (continuing boot)"
+  fi
+done
+log_success "Incremental migrations applied (or already present)"
 
 # Step 8b: Configure CloudWatch Logs agent (only if available)
 if [ "$CLOUDWATCH_AVAILABLE" = true ]; then
