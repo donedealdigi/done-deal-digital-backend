@@ -246,7 +246,8 @@ npm --version >> "$LOGFILE" 2>&1
 
 # Step 3: Install dependencies
 log_info "Installing system dependencies..."
-yum install -y git postgresql15-contrib nginx jq awscliv2 >> "$LOGFILE" 2>&1 || log_error "Dependency installation failed"
+yum install -y git postgresql15-contrib jq awscliv2 >> "$LOGFILE" 2>&1 || log_error "Dependency installation failed"
+amazon-linux-extras install -y nginx1 >> "$LOGFILE" 2>&1 || log_error "Nginx installation failed"
 log_success "Dependencies installed"
 
 # Step 4: Create app directory
@@ -283,7 +284,7 @@ log_info "Database User: $DB_USER"
 # Step 6: Download and deploy application
 log_info "Cloning application code from GitHub..."
 cd /opt/done-deal-digital
-git clone https://github.com/feadycrocka/done-deal-digital-backend.git . >> "$LOGFILE" 2>&1 || {
+git clone https://github.com/donedealdigi/done-deal-digital-backend.git . >> "$LOGFILE" 2>&1 || {
   log_error "Failed to clone application code from GitHub"
   exit 1
 }
@@ -311,6 +312,7 @@ DB_NAME=$DB_NAME
 DB_USER=$DB_USER
 DB_PASSWORD=$DB_PASSWORD
 NODE_ENV=production
+HOST=0.0.0.0
 PORT=5000
 LOG_LEVEL=info
 AWS_REGION=$AWS_REGION
@@ -319,9 +321,30 @@ ENABLE_CLOUDWATCH_LOGS=true
 INSTANCE_ID=$INSTANCE_ID
 ENVEOF
 
+log_info "Fetching application secrets from Secrets Manager..."
+APP_SECRET_ARN="arn:aws:secretsmanager:us-west-2:055340194864:secret:ddd-prod-app-env-OWOU9f"
+APP_SECRETS_JSON=$(aws secretsmanager get-secret-value --secret-id "$APP_SECRET_ARN" --region "$AWS_REGION" --query SecretString --output text 2>&1) || {
+  log_error "Failed to retrieve application secrets: $APP_SECRETS_JSON"
+  exit 1
+}
+echo "$APP_SECRETS_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> /opt/done-deal-digital/.env.production
+log_success "Application secrets merged into env file"
+
 chown ec2-user:ec2-user /opt/done-deal-digital/.env.production
 chmod 600 /opt/done-deal-digital/.env.production
 log_success "Environment file created"
+
+# Step 8a: Apply incremental schema additions (service_deposits table).
+# Targeted, idempotent (IF NOT EXISTS guards). Does NOT use run.js because
+# the old 001/002 migrations have non-PG syntax that would error.
+log_info "Applying service_deposits migration..."
+DATABASE_URL_VAL="postgresql://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
+if [ -f /opt/done-deal-digital/migrations/003_service_deposits.sql ]; then
+  PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f /opt/done-deal-digital/migrations/003_service_deposits.sql >> "$LOGFILE" 2>&1 || log_error "003_service_deposits migration failed (continuing boot)"
+  log_success "Service deposits migration applied (or already present)"
+else
+  log_info "No 003 migration file present — skipping"
+fi
 
 # Step 8b: Configure CloudWatch Logs agent (only if available)
 if [ "$CLOUDWATCH_AVAILABLE" = true ]; then

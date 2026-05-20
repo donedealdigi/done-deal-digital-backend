@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const stripeConfig = require('../config/stripe');
 const PaymentService = require('../services/PaymentService');
 const PayPalService = require('../services/PayPalService');
+const ServiceDeposit = require('../models/ServiceDeposit');
+const EmailService = require('../services/EmailService');
 const { authenticate } = require('../middleware/auth');
 const { validatePaymentInput, validateRefundInput } = require('../middleware/validation');
 
@@ -210,7 +212,40 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       });
     }
 
-    // Handle the event via PaymentService
+    // If this is a service deposit (identified by metadata.type), handle it here
+    // before delegating to PaymentService (which expects order-linked payments).
+    const obj = event.data?.object;
+    const isDeposit = obj?.metadata?.type === 'service_deposit';
+
+    if (isDeposit) {
+      try {
+        if (event.type === 'payment_intent.succeeded') {
+          const chargeId = obj.latest_charge || null;
+          const deposit = await ServiceDeposit.markPaid(obj.id, chargeId);
+          if (deposit) {
+            // Send customer receipt + internal notification (best-effort)
+            const args = {
+              customerName: deposit.customer_name,
+              customerEmail: deposit.customer_email,
+              serviceName: deposit.service_name,
+              amount: deposit.amount,
+              paymentIntentId: deposit.stripe_payment_intent_id,
+              notes: deposit.notes
+            };
+            EmailService.sendMail(EmailService.templates.depositReceipt(args)).catch(e => console.error('receipt email failed', e));
+            EmailService.sendMail(EmailService.templates.depositNotification(args)).catch(e => console.error('notification email failed', e));
+          }
+        } else if (event.type === 'payment_intent.payment_failed' || event.type === 'charge.failed') {
+          await ServiceDeposit.markFailed(obj.id || obj.payment_intent);
+        }
+      } catch (e) {
+        console.error('❌ Deposit webhook handling error:', e.message);
+        // Do not throw — Stripe expects 2xx on processed events even if our side errors.
+      }
+      return res.status(200).json({ success: true, received: true, eventType: event.type, handled: 'deposit' });
+    }
+
+    // Otherwise, delegate to the existing PaymentService (order-linked payments)
     const result = await PaymentService.handleWebhook(event);
 
     res.status(200).json({
@@ -451,6 +486,86 @@ router.post('/paypal/refund/:paymentId', async (req, res) => {
       error: 'Failed to refund PayPal payment',
       message: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
+  }
+});
+
+/* ============================================================
+ * SERVICE DEPOSIT CHECKOUT
+ * Customer pays a deposit on donedealdigital.com for a service
+ * (production, mixing, video, package, etc.). No login required.
+ * Creates a Stripe PaymentIntent + a service_deposits DB row.
+ * Webhook handler above flips status to 'succeeded' + sends emails.
+ * ============================================================ */
+
+router.post('/service-deposit/create-intent', async (req, res) => {
+  try {
+    const { amount, email, name, serviceSlug, serviceName, depositType, notes } = req.body;
+
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+      return res.status(400).json({ success: false, error: 'amount (USD dollars) required and must be positive' });
+    }
+    if (amount > 10000) {
+      return res.status(400).json({ success: false, error: 'amount exceeds limit ($10,000)' });
+    }
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return res.status(400).json({ success: false, error: 'valid email required' });
+    }
+    if (!serviceSlug || !serviceName) {
+      return res.status(400).json({ success: false, error: 'serviceSlug and serviceName required' });
+    }
+    const allowedTypes = ['fixed', 'package', 'custom'];
+    const finalDepositType = allowedTypes.includes(depositType) ? depositType : 'fixed';
+
+    const amountCents = Math.round(amount * 100);
+
+    // 1. Create Stripe PaymentIntent
+    const paymentIntent = await stripeConfig.stripe.paymentIntents.create({
+      amount: amountCents,
+      currency: 'usd',
+      receipt_email: email,
+      description: `Service Deposit: ${serviceName}`,
+      metadata: {
+        type: 'service_deposit',
+        serviceSlug: serviceSlug.substring(0, 500),
+        serviceName: serviceName.substring(0, 500),
+        depositType: finalDepositType,
+        customerEmail: email.substring(0, 500),
+        customerName: (name || '').substring(0, 500)
+      },
+      statement_descriptor_suffix: 'DONE DEAL'
+    });
+
+    // 2. Insert a DB row tracking this deposit attempt
+    await ServiceDeposit.create({
+      customerEmail: email,
+      customerName: name || null,
+      serviceSlug,
+      serviceName,
+      depositType: finalDepositType,
+      amount,
+      currency: 'USD',
+      status: 'pending',
+      stripePaymentIntentId: paymentIntent.id,
+      notes: notes || null,
+      metadata: { source: 'donedealdigital.com' }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.client_secret,
+        amount: amountCents,
+        currency: 'usd',
+        status: paymentIntent.status
+      }
+    });
+  } catch (error) {
+    console.error('❌ Service deposit create-intent error:', error.message);
+    if (error.type === 'StripeInvalidRequestError') {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+    res.status(500).json({ success: false, error: 'Failed to create deposit intent' });
   }
 });
 
