@@ -181,6 +181,48 @@ router.post('/checkout/create-intent', async (req, res) => {
 });
 
 /**
+ * POST /api/merch/orders/track
+ * Body: { orderId, email }
+ * Public order-tracking lookup. Requires BOTH the order ID and the
+ * email used at checkout — neither alone is sufficient, so a randomly
+ * leaked order ID can't be used to view someone else's purchase.
+ * Returns sanitized status info; no full address, no payment details.
+ */
+router.post('/orders/track', async (req, res) => {
+  try {
+    const { orderId, email } = req.body || {};
+    if (!orderId || !email) {
+      return res.status(400).json({ success: false, error: 'orderId and email required' });
+    }
+    const order = await MerchOrder.findById(orderId);
+    // Same error for both "not found" and "email mismatch" — don't leak existence.
+    if (!order || String(order.customer_email || '').toLowerCase() !== String(email).toLowerCase()) {
+      return res.status(404).json({ success: false, error: 'Order not found for that email' });
+    }
+    res.json({
+      success: true,
+      data: {
+        id: order.id,
+        status: order.status,
+        total: order.total,
+        currency: order.currency,
+        items: order.items,
+        tracking_number: order.tracking_number,
+        tracking_url: order.tracking_url,
+        payment_provider: order.payment_provider || 'stripe',
+        created_at: order.created_at,
+        paid_at: order.paid_at,
+        submitted_at: order.submitted_at,
+        fulfilled_at: order.fulfilled_at
+      }
+    });
+  } catch (err) {
+    console.error('Order track error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to look up order' });
+  }
+});
+
+/**
  * GET /api/merch/orders/:id
  * Look up an order's current status (so customers can track post-purchase).
  * Returns sanitized version without full address.
