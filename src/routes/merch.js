@@ -3,6 +3,7 @@ const router = express.Router();
 const stripeConfig = require('../config/stripe');
 const PrintfulService = require('../services/PrintfulService');
 const MerchOrder = require('../models/MerchOrder');
+const TaxService = require('../services/TaxService');
 
 /**
  * GET /api/merch/products
@@ -47,6 +48,31 @@ router.get('/products/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Product not found' });
     }
     res.status(500).json({ success: false, error: 'Failed to fetch product' });
+  }
+});
+
+/**
+ * POST /api/merch/tax
+ * Body: { shippingAddress: { country_code, state_code }, subtotal, shippingCost }
+ * Returns: { rate, amount, label } — 0/0/null if no tax applies for the location.
+ * Public endpoint (no auth) — safe because we only return a rate calculation.
+ */
+router.post('/tax', (req, res) => {
+  try {
+    const { shippingAddress, subtotal, shippingCost } = req.body || {};
+    if (!shippingAddress) {
+      return res.status(400).json({ success: false, error: 'shippingAddress required' });
+    }
+    const result = TaxService.calculateTax({
+      countryCode: shippingAddress.country_code,
+      stateCode: shippingAddress.state_code,
+      subtotal: Number(subtotal) || 0,
+      shippingCost: Number(shippingCost) || 0
+    });
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error('Tax calc error:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to calculate tax' });
   }
 });
 
