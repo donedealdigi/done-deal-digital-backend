@@ -25,6 +25,9 @@ router.get('/products', async (req, res) => {
     res.json({ success: true, data: lean, count: lean.length });
   } catch (err) {
     console.error('Merch list error:', err.message);
+    if (err.message && err.message.includes('PRINTFUL_API_KEY')) {
+      return res.status(503).json({ success: false, error: 'Merchandise service not configured' });
+    }
     res.status(500).json({ success: false, error: 'Failed to fetch products' });
   }
 });

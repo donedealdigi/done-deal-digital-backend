@@ -16,3 +16,7 @@ build/
 *~
 .cache/
 coverage/
+.terraform/
+*.tfplan
+terraform.tfvars
+plan-output.txt
