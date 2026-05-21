@@ -575,7 +575,7 @@ router.post('/service-deposit/create-intent', async (req, res) => {
     if (!serviceSlug || !serviceName) {
       return res.status(400).json({ success: false, error: 'serviceSlug and serviceName required' });
     }
-    const allowedTypes = ['fixed', 'package', 'custom'];
+    const allowedTypes = ['fixed', 'package', 'custom', 'digital'];
     const finalDepositType = allowedTypes.includes(depositType) ? depositType : 'fixed';
 
     const amountCents = Math.round(amount * 100);
@@ -673,7 +673,7 @@ router.post('/service-deposit/paypal/create-order', async (req, res) => {
     if (amount > 10000) return res.status(400).json({ success: false, error: 'amount exceeds $10,000 limit' });
     if (!email || !email.includes('@')) return res.status(400).json({ success: false, error: 'valid email required' });
     if (!serviceSlug || !serviceName) return res.status(400).json({ success: false, error: 'serviceSlug and serviceName required' });
-    const finalDepositType = ['fixed', 'package', 'custom'].includes(depositType) ? depositType : 'fixed';
+    const finalDepositType = ['fixed', 'package', 'custom', 'digital'].includes(depositType) ? depositType : 'fixed';
 
     const { accessToken, apiUrl } = await getPaypalAccessTokenForDeposit();
     let data;
