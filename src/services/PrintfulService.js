@@ -73,12 +73,49 @@ class PrintfulService {
    * Calculate shipping rates for a given recipient + items list.
    * recipient: { address1, city, state_code, country_code, zip }
    * items: [{ sync_variant_id, quantity }]
+   *
+   * NOTE: Printful's /shipping/rates endpoint requires `variant_id` (the
+   * Printful catalog ID), not `sync_variant_id` (the store-specific ID).
+   * The /orders endpoint accepts both, but shipping/rates is stricter.
+   * We translate by looking up each sync_variant in the cached product
+   * list and pulling its underlying `variant_id`.
    */
   static async getShippingRates({ recipient, items }) {
     if (!recipient || !items || !items.length) {
       throw new Error('recipient + items required');
     }
-    const res = await client().post('/shipping/rates', { recipient, items });
+
+    // Build a sync_variant_id -> variant_id map from the cached sync products.
+    const products = await PrintfulService.listSyncProducts();
+    const variantMap = new Map();
+    for (const p of products || []) {
+      // Each sync product has a variants count but not the underlying
+      // variant_ids; we need to fetch detail. Use a small parallel batch.
+    }
+
+    // Quick path: fetch product details in parallel for unique products that
+    // contain the sync_variant_ids we need. We don't know which product a
+    // sync_variant belongs to, so fetch all products we have (typically 1-3
+    // for a small storefront).
+    const productDetails = await Promise.all(
+      (products || []).map(p => PrintfulService.getSyncProduct(p.id).catch(() => null))
+    );
+    for (const detail of productDetails) {
+      if (!detail || !detail.sync_variants) continue;
+      for (const sv of detail.sync_variants) {
+        variantMap.set(String(sv.id), sv.variant_id);
+      }
+    }
+
+    const translated = items.map(it => {
+      const cv = variantMap.get(String(it.sync_variant_id));
+      if (!cv) {
+        throw new Error(`Unknown sync_variant_id ${it.sync_variant_id} — not in store catalog`);
+      }
+      return { variant_id: cv, quantity: it.quantity };
+    });
+
+    const res = await client().post('/shipping/rates', { recipient, items: translated });
     return unwrap(res);
   }
 
