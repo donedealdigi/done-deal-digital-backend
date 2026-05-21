@@ -1,14 +1,16 @@
 # Terraform Configuration for Done Deal Digital EC2 & ALB
 # Application Load Balancer, Launch Template, and Auto Scaling Group
 
-# Get latest Amazon Linux 2 AMI
+# Get latest Amazon Linux 2023 AMI.
+# Migrated from AL2 to AL2023 in 2026-05; AL2 entered maintenance mode 2025-06.
+# init script uses dnf install for nginx/postgresql15/git/jq.
 data "aws_ami" "amazon_linux_2" {
   most_recent = true
   owners      = ["amazon"]
 
   filter {
     name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+    values = ["al2023-ami-*-x86_64"]
   }
 
   filter {
@@ -244,11 +246,12 @@ log_info "Node.js path: $$NODE_PATH"
 $$NODE_PATH --version >> "$LOGFILE" 2>&1
 npm --version >> "$LOGFILE" 2>&1
 
-# Step 3: Install dependencies
+# Step 3: Install dependencies (AL2023-compatible)
+# On AL2023: nginx + postgresql are in default DNF repos (no amazon-linux-extras).
+# AWS CLI v2 is pre-installed on AL2023 AMIs.
 log_info "Installing system dependencies..."
-yum install -y git jq awscliv2 >> "$LOGFILE" 2>&1 || log_error "Dependency installation failed"
-amazon-linux-extras install -y nginx1 postgresql14 >> "$LOGFILE" 2>&1 || log_error "Nginx/postgresql14 installation failed"
-# AL2 doesn't have postgresql15 in extras; postgresql14 client is protocol-compatible with PG15 server
+dnf install -y git jq >> "$LOGFILE" 2>&1 || log_error "Dependency installation failed"
+dnf install -y nginx postgresql15 >> "$LOGFILE" 2>&1 || log_error "Nginx/postgresql15 installation failed"
 log_success "Dependencies installed"
 
 # Step 4: Create app directory
