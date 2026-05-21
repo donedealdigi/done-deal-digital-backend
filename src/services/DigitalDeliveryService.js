@@ -87,19 +87,46 @@ async function deliverIfDigital(deposit) {
     // Continue — the file is still in their account dashboard.
   }
 
-  // 3. Send the delivery email (best-effort).
+  // 3. Send the delivery email (best-effort). If it fails — most commonly
+  //    because SES is in sandbox and the recipient isn't verified — fall
+  //    back to an admin alert so manual fulfillment can happen quickly.
+  let customerEmailResult = { sent: false, reason: 'not attempted (no signed URL)' };
   if (signedUrl) {
-    EmailService.sendMail(EmailService.templates.digitalProductDelivery({
+    try {
+      customerEmailResult = await EmailService.sendMail(EmailService.templates.digitalProductDelivery({
+        customerName: deposit.customer_name,
+        customerEmail,
+        productName: product.name,
+        signedUrl,
+        ttlDays: Math.floor(SIGNED_URL_TTL_SEC / 86400)
+      }));
+    } catch (err) {
+      customerEmailResult = { sent: false, error: err.message };
+    }
+  }
+
+  if (customerEmailResult && customerEmailResult.sent === true) {
+    console.log(`✅ Digital delivery: ${product.name} -> ${customerEmail} (email sent)`);
+  } else {
+    // Customer-facing email failed. Alert the admin so they can fulfill manually.
+    const reason = (customerEmailResult && (customerEmailResult.error || customerEmailResult.reason)) || 'unknown';
+    console.warn(`⚠️ Customer delivery email failed for ${customerEmail}: ${reason}. Sending admin fallback alert.`);
+    EmailService.sendMail(EmailService.templates.digitalDeliveryFailureAlert({
       customerName: deposit.customer_name,
       customerEmail,
       productName: product.name,
       signedUrl,
-      ttlDays: Math.floor(SIGNED_URL_TTL_SEC / 86400)
-    })).catch(e => console.error('digital delivery email failed', e.message));
+      paymentIntentId: deposit.stripe_payment_intent_id,
+      failureReason: reason,
+      amount: deposit.amount
+    })).catch(e => console.error('admin fallback alert ALSO failed:', e.message));
   }
 
-  console.log(`✅ Digital delivery: ${product.name} -> ${customerEmail}`);
-  return { delivered: true, productSlug: deposit.service_slug };
+  return {
+    delivered: true,
+    productSlug: deposit.service_slug,
+    customerEmailSent: customerEmailResult && customerEmailResult.sent === true
+  };
 }
 
 module.exports = { deliverIfDigital };

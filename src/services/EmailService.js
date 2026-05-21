@@ -189,11 +189,72 @@ donedealdigital.com
   };
 }
 
+/**
+ * Sent to the admin (NOTIFY_EMAIL) when an automatic digital-delivery
+ * email to the customer fails — most commonly because SES is still in
+ * sandbox and the customer's address isn't on the verified list.
+ *
+ * Goes to a verified address so it always lands, even in sandbox.
+ */
+function digitalDeliveryFailureAlert({ customerName, customerEmail, productName, signedUrl, paymentIntentId, failureReason, amount }) {
+  const to = process.env.NOTIFY_EMAIL || 'donedealdigital@gmail.com';
+  const amountStr = amount != null ? `$${Number(amount).toFixed(2)}` : '(unknown)';
+  return {
+    to,
+    replyTo: customerEmail,
+    subject: `⚠️ Manual fulfillment needed: ${productName} (${customerEmail})`,
+    text: `MANUAL FULFILLMENT REQUIRED
+
+A paid digital download could not be auto-delivered because the
+customer-facing email failed to send.
+
+Product:     ${productName}
+Customer:    ${customerName || '(no name)'} <${customerEmail}>
+Amount paid: ${amountStr}
+Payment ref: ${paymentIntentId || '(none)'}
+Failure:     ${failureReason || 'unknown'}
+
+Download link to forward to the customer (active 7 days from purchase):
+
+${signedUrl || '(no link available — generate from account dashboard)'}
+
+The file is also attached to their account dashboard — they can sign in
+with the email above and download from there.
+
+Reply to this email to message the customer directly (Reply-To is set
+to their address).
+`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 620px; margin: 0 auto;">
+        <div style="background: #2a0e10; border: 1px solid #e63946; border-radius: 12px; padding: 24px 28px;">
+          <h2 style="color: #fff; margin: 0 0 8px 0; font-size: 18px;">⚠️ Manual fulfillment needed</h2>
+          <p style="color: #ddb; margin: 0 0 16px 0; font-size: 14px;">A digital-download purchase succeeded, but the auto-delivery email to the customer failed to send.</p>
+          <table style="width:100%; border-collapse: collapse; margin: 0 0 16px 0; font-size:14px;">
+            <tr><td style="padding: 6px 0; color:#aaa;">Product</td><td style="padding:6px 0; color:#fff; text-align:right;">${productName}</td></tr>
+            <tr><td style="padding: 6px 0; color:#aaa; border-top:1px solid #4a1418;">Customer</td><td style="padding:6px 0; color:#fff; text-align:right; border-top:1px solid #4a1418;">${customerName || '(no name)'}</td></tr>
+            <tr><td style="padding: 6px 0; color:#aaa; border-top:1px solid #4a1418;">Email</td><td style="padding:6px 0; color:#fff; text-align:right; border-top:1px solid #4a1418;"><a href="mailto:${customerEmail}" style="color:#c9a84c;">${customerEmail}</a></td></tr>
+            <tr><td style="padding: 6px 0; color:#aaa; border-top:1px solid #4a1418;">Amount</td><td style="padding:6px 0; color:#fff; text-align:right; border-top:1px solid #4a1418;"><strong>${amountStr}</strong></td></tr>
+            <tr><td style="padding: 6px 0; color:#aaa; border-top:1px solid #4a1418;">Payment ref</td><td style="padding:6px 0; color:#888; text-align:right; font-size:12px; border-top:1px solid #4a1418;">${paymentIntentId || '(none)'}</td></tr>
+            <tr><td style="padding: 6px 0; color:#aaa; border-top:1px solid #4a1418;">Failure reason</td><td style="padding:6px 0; color:#e63946; text-align:right; font-size:13px; border-top:1px solid #4a1418;">${failureReason || 'unknown'}</td></tr>
+          </table>
+          ${signedUrl ? `
+          <p style="color:#aaa; font-size:13px; margin:16px 0 6px 0;">Download link to forward to the customer:</p>
+          <div style="background:#0a0a0a; border:1px solid #333; border-radius:6px; padding:10px 12px; margin: 0 0 14px 0;">
+            <a href="${signedUrl}" style="color:#c9a84c; word-break:break-all; font-size:12px;">${signedUrl}</a>
+          </div>` : '<p style="color:#888; font-style:italic;">No download link available — re-generate from the account dashboard.</p>'}
+          <p style="color:#aaa; font-size:13px; margin:0;">Reply to this email to contact the customer directly.</p>
+        </div>
+      </div>
+    `
+  };
+}
+
 module.exports = {
   sendMail,
   templates: {
     depositReceipt,
     depositNotification,
-    digitalProductDelivery
+    digitalProductDelivery,
+    digitalDeliveryFailureAlert
   }
 };
