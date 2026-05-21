@@ -27,8 +27,26 @@ const app = express();
 
 // ===== SECURITY & MIDDLEWARE =====
 app.use(helmet());
+
+// CORS: allow the canonical site (with and without www), staging, and local dev.
+// Extra origins can be added via the FRONTEND_URL env var (comma-separated).
+const ALLOWED_ORIGINS = new Set([
+  'https://donedealdigital.com',
+  'https://www.donedealdigital.com',
+  'https://staging.donedealdigital.com',
+  'http://localhost:3000',
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+  ...(process.env.FRONTEND_URL || '').split(',').map(s => s.trim()).filter(Boolean)
+]);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow no-origin requests (curl, server-to-server, health checks)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.has(origin)) return callback(null, origin);
+    return callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
