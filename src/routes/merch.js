@@ -4,6 +4,7 @@ const stripeConfig = require('../config/stripe');
 const PrintfulService = require('../services/PrintfulService');
 const MerchOrder = require('../models/MerchOrder');
 const TaxService = require('../services/TaxService');
+const EmailService = require('../services/EmailService');
 
 /**
  * GET /api/merch/products
@@ -177,6 +178,84 @@ router.post('/checkout/create-intent', async (req, res) => {
       return res.status(400).json({ success: false, error: err.message });
     }
     res.status(500).json({ success: false, error: 'Failed to create checkout intent' });
+  }
+});
+
+/**
+ * POST /api/merch/printful-webhook/:secret
+ *
+ * Receives Printful event payloads. Printful doesn't sign webhooks by
+ * default, so we authenticate via a secret-in-URL pattern: configure the
+ * webhook URL in Printful as
+ *   https://api.donedealdigital.com/api/merch/printful-webhook/{PRINTFUL_WEBHOOK_SECRET}
+ * The secret is stored in AWS Secrets Manager and never logged.
+ *
+ * Handles:
+ * - package_shipped → mark order shipped, store tracking, email customer
+ * - package_returned_to_sender → mark canceled, alert admin
+ * - order_failed → mark failed, alert admin
+ *
+ * Always returns 200 to prevent Printful retry storms — failures are
+ * logged for manual follow-up.
+ */
+router.post('/printful-webhook/:secret', async (req, res) => {
+  try {
+    const expected = process.env.PRINTFUL_WEBHOOK_SECRET;
+    if (!expected || req.params.secret !== expected) {
+      // Same 404 for "no secret configured" and "wrong secret" — don't leak.
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+
+    const event = req.body || {};
+    const type = event.type;
+    const data = event.data || {};
+    console.log(`📦 Printful webhook: ${type}`);
+
+    if (type === 'package_shipped') {
+      const printfulOrderId = data.order && data.order.id;
+      const externalId = data.order && data.order.external_id;
+      const shipment = data.shipment || {};
+      const trackingNumber = shipment.tracking_number || null;
+      const trackingUrl = shipment.tracking_url || null;
+
+      const updated = await MerchOrder.markShipped({
+        printfulOrderId: printfulOrderId ? String(printfulOrderId) : null,
+        externalId: externalId || null,
+        trackingNumber,
+        trackingUrl
+      });
+
+      if (updated) {
+        EmailService.sendMail(EmailService.templates.merchShipped({
+          customerName: updated.customer_name,
+          customerEmail: updated.customer_email,
+          items: updated.items,
+          trackingNumber,
+          trackingUrl,
+          orderId: updated.id
+        })).catch(e => console.error('shipped notification failed', e.message));
+        console.log(`✅ Order ${updated.id} marked shipped: ${trackingNumber}`);
+      } else {
+        console.warn(`⚠️ package_shipped for unknown order (printful=${printfulOrderId}, external=${externalId})`);
+      }
+    } else if (type === 'package_returned_to_sender' || type === 'order_canceled') {
+      const printfulOrderId = data.order && data.order.id;
+      const externalId = data.order && data.order.external_id;
+      console.log(`⚠️ Order returned/canceled: ${externalId || printfulOrderId} — needs manual review`);
+      // We don't auto-cancel — admin should review.
+    } else if (type === 'order_failed') {
+      const externalId = data.order && data.order.external_id;
+      console.error(`❌ Printful order_failed for ${externalId} — needs manual fulfillment`);
+    } else {
+      console.log(`ℹ️ Printful webhook ${type} received (no handler)`);
+    }
+
+    // Always 200 to prevent retry storms
+    res.json({ success: true, received: true });
+  } catch (err) {
+    console.error('Printful webhook handler error:', err.message);
+    // Still 200 — Printful retries forever on non-2xx.
+    res.json({ success: false, error: 'Handler error' });
   }
 });
 

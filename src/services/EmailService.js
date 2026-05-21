@@ -249,12 +249,59 @@ to their address).
   };
 }
 
+function merchShipped({ customerName, customerEmail, items, trackingNumber, trackingUrl, orderId }) {
+  const greeting = customerName ? `Hi ${customerName}` : 'Hi there';
+  const itemList = (items || []).map(it => `${it.quantity || 1} × ${it.name || 'Item'}`).join(', ');
+  return {
+    to: customerEmail,
+    replyTo: process.env.REPLY_TO_EMAIL || 'donedealdigital@gmail.com',
+    subject: `Your Done Deal Digital order has shipped 🚚`,
+    text: `${greeting},
+
+Great news — your order is on the way!
+
+Items: ${itemList}
+Tracking: ${trackingNumber || '(pending)'}
+${trackingUrl ? 'Track package: ' + trackingUrl : ''}
+
+You can check status any time at https://donedealdigital.com/track-order.html
+(Order ID: ${orderId})
+
+— Done Deal Digital LLC
+`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 580px; margin: 0 auto; background: #0a0a0a; color: #f3f3f3; border-radius: 12px; overflow: hidden;">
+        <div style="padding: 28px 28px 0; text-align: center;">
+          <h1 style="font-size: 22px; margin: 0 0 6px 0; color: #fff; letter-spacing: 1px;">YOUR ORDER HAS SHIPPED 🚚</h1>
+          <p style="color: #888; font-size: 14px; margin: 0;">Done Deal Digital · ${new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })}</p>
+        </div>
+        <div style="padding: 24px 28px; line-height: 1.6;">
+          <p style="margin: 0 0 16px 0;">${greeting},</p>
+          <p style="margin: 0 0 18px 0;">Great news — your order is on its way!</p>
+          <div style="background: #161616; border: 1px solid #2a2a2a; border-radius: 8px; padding: 16px 18px; margin: 0 0 18px 0;">
+            <p style="margin: 0 0 6px 0; color: #c9a84c; font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase;">Items</p>
+            <p style="margin: 0 0 14px 0; color: #fff;">${itemList || '(see receipt)'}</p>
+            <p style="margin: 0 0 6px 0; color: #c9a84c; font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase;">Tracking</p>
+            <p style="margin: 0 0 12px 0; color: #fff; font-family: monospace; font-size: 13px;">${trackingNumber || '(pending)'}</p>
+            ${trackingUrl ? `<a href="${trackingUrl}" style="display: inline-block; background: #c9a84c; color: #0a0a0a; padding: 10px 20px; border-radius: 4px; text-decoration: none; font-weight: 700; letter-spacing: 0.06em; font-size: 13px;">Track package</a>` : ''}
+          </div>
+          <p style="margin: 0; color: #aaa; font-size: 14px;">Check status any time at <a href="https://donedealdigital.com/track-order.html" style="color: #c9a84c;">donedealdigital.com/track-order</a> (Order ID: <span style="font-family: monospace;">${orderId}</span>).</p>
+        </div>
+        <div style="padding: 16px 28px; border-top: 1px solid #222; text-align: center; color: #666; font-size: 12px;">
+          Done Deal Digital LLC · San Francisco Bay Area · <a href="https://donedealdigital.com" style="color: #e63946;">donedealdigital.com</a>
+        </div>
+      </div>
+    `
+  };
+}
+
 module.exports = {
   sendMail,
   templates: {
     depositReceipt,
     depositNotification,
     digitalProductDelivery,
-    digitalDeliveryFailureAlert
+    digitalDeliveryFailureAlert,
+    merchShipped
   }
 };

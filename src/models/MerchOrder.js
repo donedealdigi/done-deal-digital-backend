@@ -93,6 +93,46 @@ class MerchOrder {
     return result.rows[0] || null;
   }
 
+  /**
+   * Mark order as shipped (from Printful package_shipped webhook).
+   * Looks up by EITHER printful_order_id OR our internal id (which Printful
+   * stores as external_id), since the webhook payload exposes both.
+   */
+  static async markShipped({ printfulOrderId, externalId, trackingNumber, trackingUrl } = {}) {
+    if (!printfulOrderId && !externalId) return null;
+    const where = printfulOrderId ? 'printful_order_id = $1' : 'id = $1';
+    const idValue = printfulOrderId || externalId;
+    const result = await pool.query(
+      `UPDATE merch_orders
+       SET status = 'shipped',
+           tracking_number = COALESCE($2, tracking_number),
+           tracking_url = COALESCE($3, tracking_url),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE ${where}
+       RETURNING *`,
+      [String(idValue), trackingNumber || null, trackingUrl || null]
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Mark order as delivered. Printful doesn't always fire delivered
+   * events; this is here for completeness + manual updates.
+   */
+  static async markDelivered({ printfulOrderId, externalId } = {}) {
+    if (!printfulOrderId && !externalId) return null;
+    const where = printfulOrderId ? 'printful_order_id = $1' : 'id = $1';
+    const idValue = printfulOrderId || externalId;
+    const result = await pool.query(
+      `UPDATE merch_orders
+       SET status = 'delivered', updated_at = CURRENT_TIMESTAMP
+       WHERE ${where}
+       RETURNING *`,
+      [String(idValue)]
+    );
+    return result.rows[0] || null;
+  }
+
   static async markFulfilled(printfulOrderId, { trackingNumber, trackingUrl } = {}) {
     const result = await pool.query(
       `UPDATE merch_orders
