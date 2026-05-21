@@ -17,6 +17,7 @@ const accountRoutes = require('./routes/account');
 const adminRoutes = require('./routes/admin');
 const downloadRoutes = require('./routes/downloads');
 const chatRoutes = require('./routes/chat');
+const internshipRoutes = require('./routes/internship');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -71,6 +72,7 @@ app.use('/api/account', accountRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/downloads', authenticate, downloadRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/internship', internshipRoutes);
 
 // ===== ADMIN ROUTES (Protected) =====
 app.use('/api/admin', authenticate, (req, res, next) => {
