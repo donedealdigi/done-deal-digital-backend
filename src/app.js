@@ -14,6 +14,7 @@ const paymentRoutes = require('./routes/payments');
 const merchRoutes = require('./routes/merch');
 const newsletterRoutes = require('./routes/newsletter');
 const accountRoutes = require('./routes/account');
+const adminRoutes = require('./routes/admin');
 const downloadRoutes = require('./routes/downloads');
 const chatRoutes = require('./routes/chat');
 
@@ -67,6 +68,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/merch', merchRoutes);
 app.use('/api/newsletter', newsletterRoutes);
 app.use('/api/account', accountRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/downloads', authenticate, downloadRoutes);
 app.use('/api/chat', chatRoutes);
 

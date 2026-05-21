@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
 const User = require('../models/User');
+const AccountFile = require('../models/AccountFile');
+const S3Service = require('../services/S3Service');
 const { authenticate } = require('../middleware/auth');
 
 // All account routes require auth
@@ -96,14 +98,84 @@ router.get('/orders', async (req, res, next) => {
 
 /**
  * GET /api/account/files
- * Returns files associated with this user. (Empty for now; admin upload UI is Phase 3b.)
+ * Returns files the admin has uploaded for this user (or for the email
+ * the user registered with). Pre-signed download URLs included.
  */
-router.get('/files', async (req, res) => {
-  res.json({
-    success: true,
-    data: [],
-    note: 'File library coming soon. Files we deliver to you (stems, masters, mixes, design assets) will appear here for download.'
+router.get('/files', async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const files = await AccountFile.listForUser({
+      userId: user.id,
+      customerEmail: user.email
+    });
+
+    res.json({
+      success: true,
+      data: files.map(f => ({
+        id: f.id,
+        filename: f.filename,
+        contentType: f.content_type,
+        sizeBytes: Number(f.size_bytes) || 0,
+        category: f.category,
+        description: f.description,
+        uploadedAt: f.uploaded_at,
+        downloadCount: f.download_count,
+        downloadUrl: `/api/account/files/${f.id}/download`
+      }))
+    });
+  } catch (err) { next(err); }
+});
+
+async function resolveSignedDownload(req) {
+  const user = await User.findById(req.user.id);
+  if (!user) return { error: { status: 404, body: { error: 'User not found' } } };
+
+  const file = await AccountFile.findById(req.params.id);
+  if (!file) return { error: { status: 404, body: { error: 'File not found' } } };
+
+  const isOwner = (file.user_id && file.user_id === user.id)
+    || file.customer_email.toLowerCase() === user.email.toLowerCase();
+  if (!isOwner && user.role !== 'admin') {
+    return { error: { status: 403, body: { error: 'Not authorized to download this file' } } };
+  }
+
+  const url = await S3Service.getSignedDownloadUrl({
+    bucket: file.s3_bucket,
+    key: file.s3_key,
+    filename: file.filename,
+    expiresSec: 900
   });
+  await AccountFile.incrementDownload(file.id);
+  return { url, file };
+}
+
+/**
+ * GET /api/account/files/:id/download-url  (JSON variant)
+ * Returns { url } so the frontend can navigate the browser to it directly.
+ * Preferred when calling from JS with a JWT in the Authorization header.
+ */
+router.get('/files/:id/download-url', async (req, res, next) => {
+  try {
+    const r = await resolveSignedDownload(req);
+    if (r.error) return res.status(r.error.status).json(r.error.body);
+    res.json({ success: true, data: { url: r.url, filename: r.file.filename } });
+  } catch (err) { next(err); }
+});
+
+/**
+ * GET /api/account/files/:id/download  (302 redirect variant)
+ * Useful for direct browser navigation. Requires JWT in the Authorization header,
+ * which means this is mainly callable via fetch+manual-redirect rather than a plain
+ * link click. Most frontend code should use /download-url instead.
+ */
+router.get('/files/:id/download', async (req, res, next) => {
+  try {
+    const r = await resolveSignedDownload(req);
+    if (r.error) return res.status(r.error.status).json(r.error.body);
+    res.redirect(302, r.url);
+  } catch (err) { next(err); }
 });
 
 /**
