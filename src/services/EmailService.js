@@ -140,10 +140,60 @@ Reply to this email to contact the customer directly.
   };
 }
 
+function digitalProductDelivery({ customerName, customerEmail, productName, signedUrl, ttlDays }) {
+  const greeting = customerName ? `Hi ${customerName}` : 'Hi there';
+  const expires = ttlDays ? `This download link is active for ${ttlDays} days.` : '';
+  return {
+    to: customerEmail,
+    replyTo: process.env.REPLY_TO_EMAIL || 'donedealdigital@gmail.com',
+    subject: `Your download is ready — ${productName} | Done Deal Digital`,
+    text: `${greeting},
+
+Thanks for your purchase. Your download is ready:
+
+${productName}
+${signedUrl}
+
+${expires}
+
+You can also access this file any time from your account at
+https://donedealdigital.com/#account — sign in with this email
+address to see all your purchases.
+
+— Done Deal Digital LLC
+San Francisco Bay Area
+donedealdigital.com
+`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 580px; margin: 0 auto; background: #0a0a0a; color: #f3f3f3; border-radius: 12px; overflow: hidden;">
+        <div style="padding: 28px 28px 0; text-align: center;">
+          <h1 style="font-size: 22px; margin: 0 0 6px 0; color: #fff; letter-spacing: 1px;">YOUR DOWNLOAD IS READY</h1>
+          <p style="color: #888; font-size: 14px; margin: 0;">Done Deal Digital · ${new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })}</p>
+        </div>
+        <div style="padding: 24px 28px; line-height: 1.6;">
+          <p style="margin: 0 0 16px 0;">${greeting},</p>
+          <p style="margin: 0 0 20px 0;">Thanks for your purchase. Your file is ready to download:</p>
+          <div style="background: #161616; border: 1px solid #2a2a2a; border-radius: 8px; padding: 20px; margin: 0 0 20px 0;">
+            <p style="margin: 0 0 14px 0; color: #c9a84c; font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">PRODUCT</p>
+            <p style="margin: 0 0 18px 0; color: #fff; font-size: 18px; font-weight: 600;">${productName}</p>
+            <a href="${signedUrl}" style="display: inline-block; background: #c9a84c; color: #0a0a0a; padding: 12px 22px; border-radius: 4px; text-decoration: none; font-weight: 700; letter-spacing: 0.06em;">Download now</a>
+          </div>
+          ${expires ? `<p style="color: #888; font-size: 13px; margin: 0 0 16px 0;">${expires}</p>` : ''}
+          <p style="margin: 0; color: #aaa; font-size: 14px;">You can also access this file any time from your <a href="https://donedealdigital.com/#account" style="color: #c9a84c;">account dashboard</a> — sign in with this email address.</p>
+        </div>
+        <div style="padding: 16px 28px; border-top: 1px solid #222; text-align: center; color: #666; font-size: 12px;">
+          Done Deal Digital LLC · San Francisco Bay Area · <a href="https://donedealdigital.com" style="color: #e63946;">donedealdigital.com</a>
+        </div>
+      </div>
+    `
+  };
+}
+
 module.exports = {
   sendMail,
   templates: {
     depositReceipt,
-    depositNotification
+    depositNotification,
+    digitalProductDelivery
   }
 };

@@ -70,7 +70,7 @@ app.use('/api/merch', merchRoutes);
 app.use('/api/newsletter', newsletterRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/downloads', authenticate, downloadRoutes);
+app.use('/api/downloads', downloadRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/internship', internshipRoutes);
 

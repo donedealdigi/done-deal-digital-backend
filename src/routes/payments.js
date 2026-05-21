@@ -6,6 +6,7 @@ const PaymentService = require('../services/PaymentService');
 const PayPalService = require('../services/PayPalService');
 const ServiceDeposit = require('../models/ServiceDeposit');
 const EmailService = require('../services/EmailService');
+const DigitalDeliveryService = require('../services/DigitalDeliveryService');
 const { authenticate } = require('../middleware/auth');
 const { validatePaymentInput, validateRefundInput } = require('../middleware/validation');
 
@@ -290,6 +291,11 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             };
             EmailService.sendMail(EmailService.templates.depositReceipt(args)).catch(e => console.error('receipt email failed', e));
             EmailService.sendMail(EmailService.templates.depositNotification(args)).catch(e => console.error('notification email failed', e));
+
+            // Auto-deliver if this deposit corresponds to a digital product.
+            // No-op for service deposits that aren't in the catalog.
+            DigitalDeliveryService.deliverIfDigital(deposit)
+              .catch(e => console.error('digital delivery failed', e.message));
           }
         } else if (event.type === 'payment_intent.payment_failed' || event.type === 'charge.failed') {
           await ServiceDeposit.markFailed(obj.id || obj.payment_intent);
@@ -754,6 +760,10 @@ router.post('/service-deposit/paypal/capture', async (req, res) => {
         };
         EmailService.sendMail(EmailService.templates.depositReceipt(args)).catch(e => console.error('PayPal receipt email failed', e));
         EmailService.sendMail(EmailService.templates.depositNotification(args)).catch(e => console.error('PayPal notification email failed', e));
+
+        // Auto-deliver if this deposit corresponds to a digital product.
+        DigitalDeliveryService.deliverIfDigital(deposit)
+          .catch(e => console.error('PayPal digital delivery failed', e.message));
       }
     }
 
