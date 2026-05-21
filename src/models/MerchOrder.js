@@ -9,8 +9,9 @@ class MerchOrder {
       INSERT INTO merch_orders
         (id, customer_email, customer_name, items, shipping_address,
          subtotal, shipping_cost, tax, total, currency, status,
-         stripe_payment_intent_id, notes, metadata, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)
+         stripe_payment_intent_id, paypal_order_id, payment_provider,
+         notes, metadata, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
       RETURNING *
     `;
     const result = await pool.query(query, [
@@ -25,12 +26,33 @@ class MerchOrder {
       data.total,
       data.currency || 'USD',
       data.status || 'pending',
-      data.stripePaymentIntentId,
+      data.stripePaymentIntentId || null,
+      data.paypalOrderId || null,
+      data.paymentProvider || 'stripe',
       data.notes || null,
       data.metadata || {},
       now
     ]);
     return result.rows[0];
+  }
+
+  static async findByPaypalOrderId(paypalOrderId) {
+    const result = await pool.query(
+      'SELECT * FROM merch_orders WHERE paypal_order_id = $1',
+      [paypalOrderId]
+    );
+    return result.rows[0] || null;
+  }
+
+  static async markPaypalCaptured(paypalOrderId) {
+    const result = await pool.query(
+      `UPDATE merch_orders
+       SET status = 'paid', paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE paypal_order_id = $1
+       RETURNING *`,
+      [paypalOrderId]
+    );
+    return result.rows[0] || null;
   }
 
   static async findByPaymentIntent(stripePaymentIntentId) {

@@ -777,4 +777,192 @@ router.post('/service-deposit/paypal/capture', async (req, res) => {
   }
 });
 
+// ============================================================================
+// MERCH ORDERS — PayPal flow
+// Mirrors the Stripe merch checkout in src/routes/merch.js but for PayPal.
+// create-order: creates a PayPal order + a merch_orders row (pending).
+// capture:      captures the PayPal payment, marks order paid, submits to
+//               Printful synchronously (no webhook for PayPal).
+// ============================================================================
+
+/**
+ * POST /api/payments/merch/paypal/create-order
+ * Body: { items, shippingAddress, shippingOption, email, name, subtotal, shippingCost, tax, notes }
+ * Returns: { orderId } for the PayPal SDK to render approval flow.
+ */
+router.post('/merch/paypal/create-order', async (req, res) => {
+  try {
+    const MerchOrder = require('../models/MerchOrder');
+    const { items, shippingAddress, shippingOption, email, name, subtotal, shippingCost, tax, notes } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, error: 'items required' });
+    }
+    if (!shippingAddress || !shippingAddress.country_code || !shippingAddress.address1) {
+      return res.status(400).json({ success: false, error: 'shippingAddress required' });
+    }
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ success: false, error: 'valid email required' });
+    }
+
+    const subtotalNum = Number(subtotal) || 0;
+    const shippingNum = Number(shippingCost) || 0;
+    const taxNum = Number(tax) || 0;
+    const total = subtotalNum + shippingNum + taxNum;
+
+    if (total <= 0) return res.status(400).json({ success: false, error: 'total must be > 0' });
+    if (total > 10000) return res.status(400).json({ success: false, error: 'order total exceeds $10,000 limit' });
+
+    const { accessToken, apiUrl } = await getPaypalAccessTokenForDeposit();
+    let data;
+    try {
+      const r = await axios.post(
+        `${apiUrl}/v2/checkout/orders`,
+        {
+          intent: 'CAPTURE',
+          purchase_units: [{
+            amount: {
+              currency_code: 'USD',
+              value: total.toFixed(2),
+              breakdown: {
+                item_total: { currency_code: 'USD', value: subtotalNum.toFixed(2) },
+                shipping:   { currency_code: 'USD', value: shippingNum.toFixed(2) },
+                tax_total:  { currency_code: 'USD', value: taxNum.toFixed(2) }
+              }
+            },
+            description: `Done Deal Digital merch: ${items.length} item${items.length > 1 ? 's' : ''}`.substring(0, 127),
+            custom_id: `merch_${Date.now()}`.substring(0, 127),
+            shipping: {
+              name: { full_name: (name || '').substring(0, 300) || 'Customer' },
+              address: {
+                address_line_1: (shippingAddress.address1 || '').substring(0, 300),
+                address_line_2: (shippingAddress.address2 || '').substring(0, 300) || undefined,
+                admin_area_2:   (shippingAddress.city || '').substring(0, 120),
+                admin_area_1:   (shippingAddress.state_code || '').substring(0, 300),
+                postal_code:    (shippingAddress.zip || '').substring(0, 60),
+                country_code:    shippingAddress.country_code
+              }
+            }
+          }],
+          application_context: {
+            brand_name: 'Done Deal Digital',
+            user_action: 'PAY_NOW',
+            shipping_preference: 'SET_PROVIDED_ADDRESS'
+          }
+        },
+        { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` } }
+      );
+      data = r.data;
+    } catch (err) {
+      const detail = err.response ? `${err.response.status} ${JSON.stringify(err.response.data)}` : err.message;
+      throw new Error(`PayPal merch create-order failed: ${detail}`);
+    }
+
+    const order = await MerchOrder.create({
+      customerEmail: email,
+      customerName: name || null,
+      items,
+      shippingAddress,
+      subtotal: subtotalNum,
+      shippingCost: shippingNum,
+      tax: taxNum,
+      total,
+      currency: 'USD',
+      status: 'pending',
+      paypalOrderId: data.id,
+      paymentProvider: 'paypal',
+      notes: notes || null,
+      metadata: { shippingOption: shippingOption || null, source: 'donedealdigital.com', provider: 'paypal' }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: { orderId: data.id, status: data.status, internalOrderId: order.id }
+    });
+  } catch (error) {
+    console.error('❌ Merch PayPal create-order error:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to create PayPal order' });
+  }
+});
+
+/**
+ * POST /api/payments/merch/paypal/capture
+ * Body: { orderId }
+ * Captures the approved PayPal order, marks merch_order paid, submits to Printful.
+ */
+router.post('/merch/paypal/capture', async (req, res) => {
+  try {
+    const MerchOrder = require('../models/MerchOrder');
+    const PrintfulService = require('../services/PrintfulService');
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ success: false, error: 'orderId required' });
+
+    const { accessToken, apiUrl } = await getPaypalAccessTokenForDeposit();
+    let data;
+    try {
+      const r = await axios.post(
+        `${apiUrl}/v2/checkout/orders/${orderId}/capture`,
+        {},
+        { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` } }
+      );
+      data = r.data;
+    } catch (err) {
+      const detail = err.response ? `${err.response.status} ${JSON.stringify(err.response.data)}` : err.message;
+      throw new Error(`PayPal merch capture failed: ${detail}`);
+    }
+    const captureId = data.purchase_units?.[0]?.payments?.captures?.[0]?.id || null;
+
+    if (data.status === 'COMPLETED') {
+      const order = await MerchOrder.markPaypalCaptured(orderId);
+      if (order) {
+        // Submit to Printful synchronously (PayPal flow has no webhook)
+        try {
+          const ship = order.shipping_address || {};
+          const printfulOrder = await PrintfulService.createOrder({
+            external_id: order.id,
+            recipient: {
+              name: order.customer_name || ship.name,
+              email: order.customer_email,
+              address1: ship.address1,
+              address2: ship.address2 || null,
+              city: ship.city,
+              state_code: ship.state_code,
+              country_code: ship.country_code,
+              zip: ship.zip,
+              phone: ship.phone || null
+            },
+            items: (order.items || []).map(it => ({
+              sync_variant_id: it.sync_variant_id,
+              quantity: it.quantity,
+              retail_price: it.retail_price ? String(it.retail_price) : undefined,
+              name: it.name
+            })),
+            retail_costs: {
+              currency: order.currency || 'USD',
+              subtotal: String(order.subtotal),
+              shipping: String(order.shipping_cost),
+              tax: String(order.tax),
+              total: String(order.total)
+            },
+            confirm: true
+          });
+          await MerchOrder.markSubmitted(order.id, String(printfulOrder.id));
+          console.log(`✅ Merch order ${order.id} (PayPal) submitted to Printful as ${printfulOrder.id}`);
+        } catch (pferr) {
+          console.error(`❌ Printful submission failed for merch order ${order.id}:`, pferr.message);
+          // Payment captured, just needs manual fulfillment fix
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { orderId: data.id, status: data.status, captureId }
+    });
+  } catch (error) {
+    console.error('❌ Merch PayPal capture error:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to capture PayPal order' });
+  }
+});
+
 module.exports = router;
