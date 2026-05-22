@@ -262,7 +262,10 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               console.log(`✅ Merch order ${order.id} submitted to Printful as ${printfulOrder.id}`);
             } catch (pferr) {
               console.error(`❌ Printful submission failed for merch order ${order.id}:`, pferr.message);
-              // Don't throw — payment is captured, just needs manual fulfillment fix
+              // Payment is captured — alert admin for manual fulfillment.
+              EmailService.sendMail(EmailService.templates.merchFulfillmentFailureAlert({
+                order, failureReason: pferr.message
+              })).catch(e => console.error('merch failure alert email failed', e.message));
             }
           }
         } else if (event.type === 'payment_intent.payment_failed' || event.type === 'charge.failed') {
@@ -950,7 +953,10 @@ router.post('/merch/paypal/capture', async (req, res) => {
           console.log(`✅ Merch order ${order.id} (PayPal) submitted to Printful as ${printfulOrder.id}`);
         } catch (pferr) {
           console.error(`❌ Printful submission failed for merch order ${order.id}:`, pferr.message);
-          // Payment captured, just needs manual fulfillment fix
+          // Payment captured — alert admin for manual fulfillment.
+          EmailService.sendMail(EmailService.templates.merchFulfillmentFailureAlert({
+            order, failureReason: pferr.message
+          })).catch(e => console.error('merch failure alert email failed', e.message));
         }
       }
     }

@@ -295,6 +295,85 @@ You can check status any time at https://donedealdigital.com/track-order.html
   };
 }
 
+/**
+ * Sent to the admin when a paid merch order fails to submit to Printful.
+ * Payment is already captured — this order needs to be created manually in
+ * the Printful dashboard. Includes everything needed to do that.
+ */
+function merchFulfillmentFailureAlert({ order, failureReason }) {
+  const to = process.env.NOTIFY_EMAIL || 'donedealdigital@gmail.com';
+  const ship = order.shipping_address || {};
+  let items = order.items || [];
+  if (typeof items === 'string') { try { items = JSON.parse(items); } catch { items = []; } }
+
+  const itemsText = items.map(it =>
+    `  - ${it.quantity || 1} x ${it.name || 'Item'} (sync_variant_id: ${it.sync_variant_id || '?'})`
+  ).join('\n');
+  const itemsHtml = items.map(it =>
+    `<tr><td style="padding:4px 0;color:#fff;">${it.quantity || 1} &times; ${it.name || 'Item'}</td><td style="padding:4px 0;text-align:right;color:#888;font-size:12px;">variant ${it.sync_variant_id || '?'}</td></tr>`
+  ).join('');
+
+  const addr = [
+    ship.address1, ship.address2, `${ship.city || ''}, ${ship.state_code || ''} ${ship.zip || ''}`.trim(), ship.country_code
+  ].filter(Boolean).join(', ');
+  const paymentRef = order.payment_provider === 'paypal'
+    ? `PayPal: ${order.paypal_order_id || '(none)'}`
+    : `Stripe: ${order.stripe_payment_intent_id || '(none)'}`;
+  const amountStr = order.total != null ? `$${Number(order.total).toFixed(2)}` : '(unknown)';
+
+  return {
+    to,
+    replyTo: order.customer_email,
+    subject: `⚠️ Merch order needs manual fulfillment: ${order.id}`,
+    text: `MANUAL FULFILLMENT REQUIRED — MERCH ORDER
+
+A merch order was PAID but failed to submit to Printful. The customer
+has been charged; the order must be created manually in the Printful
+dashboard.
+
+Order ID:    ${order.id}
+Customer:    ${order.customer_name || '(no name)'} <${order.customer_email}>
+Amount paid: ${amountStr} (${order.payment_provider || 'stripe'})
+Payment ref: ${paymentRef}
+Failure:     ${failureReason || 'unknown'}
+
+Items:
+${itemsText || '  (none listed)'}
+
+Ship to:
+  ${order.customer_name || ''}
+  ${addr}
+
+ACTION: Log into Printful, create this order manually with the items
+and address above, then it's handled. Reply to this email to contact
+the customer if needed.
+`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 620px; margin: 0 auto;">
+        <div style="background: #2a0e10; border: 1px solid #e63946; border-radius: 12px; padding: 24px 28px;">
+          <h2 style="color:#fff; margin:0 0 8px 0; font-size:18px;">⚠️ Merch order needs manual fulfillment</h2>
+          <p style="color:#ddb; margin:0 0 16px 0; font-size:14px;">This order was <strong>paid</strong> but failed to submit to Printful. The customer has been charged — create the order manually in the Printful dashboard.</p>
+          <table style="width:100%; border-collapse:collapse; margin:0 0 14px 0; font-size:14px;">
+            <tr><td style="padding:6px 0;color:#aaa;">Order ID</td><td style="padding:6px 0;color:#fff;text-align:right;font-family:monospace;font-size:12px;">${order.id}</td></tr>
+            <tr><td style="padding:6px 0;color:#aaa;border-top:1px solid #4a1418;">Customer</td><td style="padding:6px 0;color:#fff;text-align:right;border-top:1px solid #4a1418;">${order.customer_name || '(no name)'}</td></tr>
+            <tr><td style="padding:6px 0;color:#aaa;border-top:1px solid #4a1418;">Email</td><td style="padding:6px 0;text-align:right;border-top:1px solid #4a1418;"><a href="mailto:${order.customer_email}" style="color:#c9a84c;">${order.customer_email}</a></td></tr>
+            <tr><td style="padding:6px 0;color:#aaa;border-top:1px solid #4a1418;">Amount paid</td><td style="padding:6px 0;color:#fff;text-align:right;border-top:1px solid #4a1418;"><strong>${amountStr}</strong> (${order.payment_provider || 'stripe'})</td></tr>
+            <tr><td style="padding:6px 0;color:#aaa;border-top:1px solid #4a1418;">Payment ref</td><td style="padding:6px 0;color:#888;text-align:right;font-size:12px;border-top:1px solid #4a1418;">${paymentRef}</td></tr>
+            <tr><td style="padding:6px 0;color:#aaa;border-top:1px solid #4a1418;">Failure</td><td style="padding:6px 0;color:#e63946;text-align:right;font-size:13px;border-top:1px solid #4a1418;">${failureReason || 'unknown'}</td></tr>
+          </table>
+          <p style="color:#aaa;font-size:13px;margin:0 0 4px 0;">Items to order:</p>
+          <table style="width:100%;border-collapse:collapse;background:#0a0a0a;border:1px solid #333;border-radius:6px;padding:8px;margin:0 0 12px 0;">
+            ${itemsHtml || '<tr><td style="padding:4px 8px;color:#888;">(none listed)</td></tr>'}
+          </table>
+          <p style="color:#aaa;font-size:13px;margin:0 0 4px 0;">Ship to:</p>
+          <p style="color:#fff;font-size:14px;margin:0 0 14px 0;">${order.customer_name || ''}<br/>${addr}</p>
+          <p style="color:#aaa;font-size:13px;margin:0;">Create this order in Printful manually. Reply to this email to reach the customer.</p>
+        </div>
+      </div>
+    `
+  };
+}
+
 module.exports = {
   sendMail,
   templates: {
@@ -302,6 +381,7 @@ module.exports = {
     depositNotification,
     digitalProductDelivery,
     digitalDeliveryFailureAlert,
-    merchShipped
+    merchShipped,
+    merchFulfillmentFailureAlert
   }
 };
