@@ -374,6 +374,64 @@ the customer if needed.
   };
 }
 
+/**
+ * Abandoned-cart recovery — sent to a customer who started merch checkout
+ * (a pending merch_orders row was created) but never completed payment.
+ * Best-effort nudge back to the storefront.
+ */
+function abandonedCartReminder({ order }) {
+  const greeting = order.customer_name ? `Hi ${order.customer_name}` : 'Hi there';
+  let items = order.items || [];
+  if (typeof items === 'string') { try { items = JSON.parse(items); } catch { items = []; } }
+
+  const itemsText = items.map(it => `  - ${it.quantity || 1} x ${it.name || 'Item'}`).join('\n');
+  const itemsHtml = items.map(it =>
+    `<tr><td style="padding:6px 0;color:#fff;">${it.quantity || 1} &times; ${it.name || 'Item'}</td></tr>`
+  ).join('');
+
+  return {
+    to: order.customer_email,
+    replyTo: process.env.REPLY_TO_EMAIL || 'donedealdigital@gmail.com',
+    subject: 'You left something behind — Done Deal Digital',
+    text: `${greeting},
+
+You started checking out on donedealdigital.com but didn't finish — your
+items are still waiting:
+
+${itemsText || '  (your selection)'}
+
+Pick up where you left off: https://donedealdigital.com/#merch
+
+Questions before you buy? Just reply to this email.
+
+— Done Deal Digital LLC
+San Francisco Bay Area
+`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 580px; margin: 0 auto; background: #0a0a0a; color: #f3f3f3; border-radius: 12px; overflow: hidden;">
+        <div style="padding: 28px 28px 0; text-align: center;">
+          <h1 style="font-size: 22px; margin: 0 0 6px 0; color: #fff; letter-spacing: 1px;">YOU LEFT SOMETHING BEHIND</h1>
+          <p style="color: #888; font-size: 14px; margin: 0;">Done Deal Digital</p>
+        </div>
+        <div style="padding: 24px 28px; line-height: 1.6;">
+          <p style="margin: 0 0 16px 0;">${greeting},</p>
+          <p style="margin: 0 0 18px 0;">You started checking out but didn't finish. Your items are still waiting:</p>
+          <table style="width:100%; border-collapse:collapse; background:#161616; border:1px solid #2a2a2a; border-radius:8px; padding:8px 16px; margin:0 0 20px 0;">
+            ${itemsHtml || '<tr><td style="padding:6px 0;color:#888;">Your selection</td></tr>'}
+          </table>
+          <div style="text-align:center; margin: 0 0 18px 0;">
+            <a href="https://donedealdigital.com/#merch" style="display:inline-block; background:#c9a84c; color:#0a0a0a; padding:12px 28px; border-radius:4px; text-decoration:none; font-weight:700; letter-spacing:0.06em;">Complete Your Order</a>
+          </div>
+          <p style="margin:0; color:#aaa; font-size:14px;">Questions before you buy? Just reply to this email — we're happy to help.</p>
+        </div>
+        <div style="padding: 16px 28px; border-top: 1px solid #222; text-align: center; color: #666; font-size: 12px;">
+          Done Deal Digital LLC · San Francisco Bay Area · <a href="https://donedealdigital.com" style="color: #e63946;">donedealdigital.com</a>
+        </div>
+      </div>
+    `
+  };
+}
+
 module.exports = {
   sendMail,
   templates: {
@@ -382,6 +440,7 @@ module.exports = {
     digitalProductDelivery,
     digitalDeliveryFailureAlert,
     merchShipped,
-    merchFulfillmentFailureAlert
+    merchFulfillmentFailureAlert,
+    abandonedCartReminder
   }
 };

@@ -148,6 +148,28 @@ class MerchOrder {
     return result.rows[0] || null;
   }
 
+  /**
+   * Abandoned-cart recovery: atomically claim pending merch orders that were
+   * created between 1 hour and 7 days ago and have never had a recovery email.
+   *
+   * The UPDATE ... RETURNING is the claim — Postgres row-locking guarantees
+   * each row is returned to exactly one caller, so it's safe to run on every
+   * instance concurrently without double-sending.
+   */
+  static async claimAbandonedForRecovery() {
+    const result = await pool.query(
+      `UPDATE merch_orders
+       SET recovery_email_sent_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE status = 'pending'
+         AND recovery_email_sent_at IS NULL
+         AND created_at < CURRENT_TIMESTAMP - INTERVAL '1 hour'
+         AND created_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
+       RETURNING *`
+    );
+    return result.rows;
+  }
+
   static async markFailed(stripePaymentIntentId) {
     const result = await pool.query(
       `UPDATE merch_orders

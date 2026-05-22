@@ -121,6 +121,13 @@ const server = app.listen(PORT, HOST, () => {
   console.log(`📡 Server running at http://${HOST}:${PORT}`);
   console.log(`🔌 Environment: ${process.env.NODE_ENV}`);
   console.log(`\n✅ Health check: http://${HOST}:${PORT}/health\n`);
+
+  // Abandoned-cart recovery — periodic background sweep.
+  try {
+    require('./services/AbandonedCartService').startScheduler();
+  } catch (e) {
+    console.error('Failed to start abandoned-cart scheduler:', e.message);
+  }
 });
 
 // Graceful shutdown
