@@ -76,6 +76,66 @@ const CATALOG = {
     filename: 'Spendoe-To-The-Top.wav',
     contentType: 'audio/wav',
     category: 'single'
+  },
+  'f-train-to-queens': {
+    name: 'F Train to Queens',
+    description: 'Mr. Freejack — single. MP3 master.',
+    price: 1.99,
+    s3Bucket: process.env.CLIENTFILES_BUCKET || 'donedealdigital-clientfiles',
+    s3Key: 'digital-products/f-train-to-queens.mp3',
+    filename: 'Mr-Freejack-F-Train-to-Queens.mp3',
+    contentType: 'audio/mpeg',
+    category: 'single'
+  },
+  'feel-my-pain': {
+    name: 'Feel My Pain',
+    description: 'Feady Crocka — single. Lossless WAV master bounce.',
+    price: 1.99,
+    s3Bucket: process.env.CLIENTFILES_BUCKET || 'donedealdigital-clientfiles',
+    s3Key: 'digital-products/feel-my-pain.wav',
+    filename: 'Feady-Crocka-Feel-My-Pain.wav',
+    contentType: 'audio/wav',
+    category: 'single'
+  },
+  '4-letter-word': {
+    name: '4 Letter Word',
+    description: "J'Dom — single. MP3 master.",
+    price: 1.99,
+    s3Bucket: process.env.CLIENTFILES_BUCKET || 'donedealdigital-clientfiles',
+    s3Key: 'digital-products/4-letter-word.mp3',
+    filename: 'JDom-4-Letter-Word.mp3',
+    contentType: 'audio/mpeg',
+    category: 'single'
+  },
+  'one-night': {
+    name: 'One Night',
+    description: "J'Dom feat. E-40 — single. MP3 master.",
+    price: 1.99,
+    s3Bucket: process.env.CLIENTFILES_BUCKET || 'donedealdigital-clientfiles',
+    s3Key: 'digital-products/one-night.mp3',
+    filename: 'JDom-One-Night-feat-E40.mp3',
+    contentType: 'audio/mpeg',
+    category: 'single'
+  },
+  'winnin': {
+    name: 'Winnin',
+    description: 'Spendoe — single. Lossless WAV master.',
+    price: 1.99,
+    s3Bucket: process.env.CLIENTFILES_BUCKET || 'donedealdigital-clientfiles',
+    s3Key: 'digital-products/winnin.wav',
+    filename: 'Spendoe-Winnin.wav',
+    contentType: 'audio/wav',
+    category: 'single'
+  },
+  'coca-leaf': {
+    name: 'Coca Leaf',
+    description: 'San Quinn & Messy Marv — single. Lossless WAV master.',
+    price: 1.99,
+    s3Bucket: process.env.CLIENTFILES_BUCKET || 'donedealdigital-clientfiles',
+    s3Key: 'digital-products/coca-leaf.wav',
+    filename: 'San-Quinn-Messy-Marv-Coca-Leaf.wav',
+    contentType: 'audio/wav',
+    category: 'single'
   }
 };
 
