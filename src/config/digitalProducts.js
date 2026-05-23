@@ -46,6 +46,36 @@ const CATALOG = {
     filename: "Tha-Dangla-Straight-Maxn.zip",
     contentType: 'application/zip',
     category: 'album'
+  },
+  'servin-ep': {
+    name: 'Servin EP',
+    description: 'Spendoe — 5-track EP featuring The Jacka. Lossless WAV masters.',
+    price: 9.99,
+    s3Bucket: process.env.CLIENTFILES_BUCKET || 'donedealdigital-clientfiles',
+    s3Key: 'digital-products/servin-ep.zip',
+    filename: 'Spendoe-Servin-EP.zip',
+    contentType: 'application/zip',
+    category: 'ep'
+  },
+  'huh-whaaat': {
+    name: 'Huh Whaaat',
+    description: "Adry'Anna Couture — single, 2:57. 320 kbps MP3 master.",
+    price: 1.99,
+    s3Bucket: process.env.CLIENTFILES_BUCKET || 'donedealdigital-clientfiles',
+    s3Key: 'digital-products/huh-whaaat.mp3',
+    filename: 'AdryAnna-Couture-Huh-Whaaat.mp3',
+    contentType: 'audio/mpeg',
+    category: 'single'
+  },
+  'spendoe-to-the-top': {
+    name: 'To The Top',
+    description: 'Spendoe — single, 2:48. Lossless 16-bit/44.1kHz WAV master. Produced by Done Deal Digital.',
+    price: 1.99,
+    s3Bucket: process.env.CLIENTFILES_BUCKET || 'donedealdigital-clientfiles',
+    s3Key: 'digital-products/spendoe-to-the-top.wav',
+    filename: 'Spendoe-To-The-Top.wav',
+    contentType: 'audio/wav',
+    category: 'single'
   }
 };
 
