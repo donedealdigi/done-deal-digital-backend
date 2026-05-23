@@ -26,6 +26,26 @@ const CATALOG = {
     filename: 'Done-Deal-Digital-College-Radio-Playbook.pdf',
     contentType: 'application/pdf',
     category: 'guide'
+  },
+  'down-4-the-cause': {
+    name: 'Down 4 The Cause',
+    description: 'The Fast 1 — 1995 Bay Area debut album. Rare Bay Area gem with standout cuts "Wake Up," "Freak Da Fonk," and "Landed On a Mill Ticket."',
+    price: 14.99,
+    s3Bucket: process.env.CLIENTFILES_BUCKET || 'donedealdigital-clientfiles',
+    s3Key: 'digital-products/down-4-the-cause.wav',
+    filename: 'The-Fast-1-Down-4-The-Cause.wav',
+    contentType: 'audio/wav',
+    category: 'album'
+  },
+  'straight-maxn': {
+    name: "Straight Max'n",
+    description: "Tha Dangla — 1996 LP, Executive Produced by Feady Crocka. 12-track WAV album (lossless 16-bit/44.1kHz masters).",
+    price: 14.99,
+    s3Bucket: process.env.CLIENTFILES_BUCKET || 'donedealdigital-clientfiles',
+    s3Key: 'digital-products/straight-maxn.zip',
+    filename: "Tha-Dangla-Straight-Maxn.zip",
+    contentType: 'application/zip',
+    category: 'album'
   }
 };
 
