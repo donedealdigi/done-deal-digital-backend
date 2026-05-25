@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -25,8 +26,59 @@ const { authenticate } = require('./middleware/auth');
 
 const app = express();
 
+// Behind ALB → need to trust X-Forwarded-For so rate limiting + logging
+// see real client IPs instead of the load balancer IP.
+app.set('trust proxy', 1);
+
 // ===== SECURITY & MIDDLEWARE =====
 app.use(helmet());
+
+// ===== RATE LIMITING (per security audit 2026-05-25 H-2) =====
+// Strict limiter for auth endpoints (login, register, password reset).
+// 5 attempts per 15 min per IP. Defends against brute force / credential
+// stuffing. Skips successful requests so legitimate users aren't penalized.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: 'Too many auth attempts. Please try again in 15 minutes.' }
+});
+
+// Moderate limiter for payment endpoints (intent creation, capture).
+// 20 requests per 15 min per IP. Webhook endpoints are exempted via
+// the `skip` predicate below (Stripe + PayPal need to retry on transient
+// failures and shouldn't be rate-limited).
+const paymentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => /\/webhook($|\/)/.test(req.path),
+  message: { error: 'Too many payment requests. Please try again shortly.' }
+});
+
+// Form-style limiter for newsletter signup, internship apps, contact forms.
+// 5 per hour per IP — generous for legit users, blocks spam bots.
+const formLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many submissions. Please try again later.' }
+});
+
+// Global limiter for everything else under /api. 100 per 15 min per IP.
+// Skips health check + webhook endpoints so ALB and Stripe/PayPal never
+// get rate-limited.
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path === '/api/health' || /\/webhook($|\/)/.test(req.path)
+});
 
 // CORS: allow the canonical site (with and without www), staging, and local dev.
 // Extra origins can be added via the FRONTEND_URL env var (comma-separated).
@@ -78,6 +130,20 @@ app.get('/api/health', (req, res) => {
 });
 
 // ===== API ROUTES =====
+// Global API rate limiter applies first to ALL /api/* routes (skips
+// /api/health and *webhook* endpoints — see apiLimiter.skip predicate).
+app.use('/api', apiLimiter);
+
+// Targeted limiters layer on top for sensitive endpoints.
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/forgot-password', authLimiter);
+app.use('/api/auth/reset-password', authLimiter);
+app.use('/api/payments', paymentLimiter);
+app.use('/api/newsletter', formLimiter);
+app.use('/api/internship', formLimiter);
+app.use('/api/chat', formLimiter);
+
 app.use('/api/auth', authRoutes);
 app.use('/api/users', authenticate, userRoutes);
 app.use('/api/products', productRoutes);
