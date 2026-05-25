@@ -107,9 +107,15 @@ app.use(cors({
 // Logging
 app.use(morgan('combined'));
 
-// Body parsing
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Body parsing — restricted to 1MB by default for DoS / memory-exhaustion
+// defense (audit M-3). File uploads go through multer with their own
+// per-route limits, not via express.json. Webhook payloads (Stripe events)
+// are typically <50KB. Auth, newsletter, payment intent creation are all
+// tiny. If any future route legitimately needs larger JSON bodies, mount
+// a route-specific express.json({limit: 'Xmb'}) at the start of that
+// route's handler chain.
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
 
 // ===== HEALTH CHECK =====
 app.get('/health', (req, res) => {
