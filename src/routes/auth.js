@@ -14,6 +14,34 @@ const SITE_URL = process.env.SITE_URL || 'https://donedealdigital.com';
 const PASSWORD_RESET_TTL_HOURS = 1;
 const EMAIL_VERIFY_TTL_HOURS = 24;
 
+// ===== Session cookie helpers (audit H-4 — JWT moved from localStorage to httpOnly cookie) =====
+// Access token now flows in `ddd_session` httpOnly + Secure + SameSite=Lax
+// cookie. Frontend continues to receive accessToken in JSON body too
+// (transition phase 1 — backward compat with old clients still reading
+// localStorage). After 30 days + frontend rollout, body-token can be
+// removed in phase 3.
+const PROD = process.env.NODE_ENV === 'production';
+const SESSION_COOKIE_NAME = 'ddd_session';
+const SESSION_COOKIE_OPTS = {
+  httpOnly: true,
+  secure: PROD,
+  sameSite: 'lax',  // lax (not strict) so payment-redirect returns keep the session
+  maxAge: 7 * 24 * 60 * 60 * 1000,  // 7d matches JWT_EXPIRY
+  path: '/',
+  ...(PROD ? { domain: '.donedealdigital.com' } : {})  // omit in dev
+};
+
+function setSessionCookie(res, accessToken) {
+  res.cookie(SESSION_COOKIE_NAME, accessToken, SESSION_COOKIE_OPTS);
+}
+
+function clearSessionCookie(res) {
+  res.clearCookie(SESSION_COOKIE_NAME, {
+    path: '/',
+    ...(PROD ? { domain: '.donedealdigital.com' } : {})
+  });
+}
+
 // ===== REGISTER =====
 router.post('/register', [
   body('email').isEmail().normalizeEmail(),
@@ -48,6 +76,9 @@ router.post('/register', [
       maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
 
+    // Access token also written to httpOnly cookie (audit H-4)
+    setSessionCookie(res, accessToken);
+
     res.status(201).json({
       message: 'User registered successfully',
       user: {
@@ -56,7 +87,8 @@ router.post('/register', [
         displayName: user.display_name,
         role: user.role
       },
-      accessToken
+      accessToken  // body token kept for transition compat — frontends reading
+                   // localStorage continue to work until phase 3 cleanup
     });
   } catch (error) {
     next(error);
@@ -99,6 +131,9 @@ router.post('/login', [
       maxAge: 30 * 24 * 60 * 60 * 1000
     });
 
+    // Access token also written to httpOnly cookie (audit H-4)
+    setSessionCookie(res, accessToken);
+
     res.json({
       message: 'Login successful',
       user: {
@@ -107,7 +142,7 @@ router.post('/login', [
         displayName: user.display_name,
         role: user.role
       },
-      accessToken
+      accessToken  // body token kept for transition compat
     });
   } catch (error) {
     next(error);
@@ -117,6 +152,7 @@ router.post('/login', [
 // ===== LOGOUT =====
 router.post('/logout', (req, res) => {
   res.clearCookie('refreshToken');
+  clearSessionCookie(res);  // audit H-4 — also clear the session cookie
   res.json({ message: 'Logged out successfully' });
 });
 

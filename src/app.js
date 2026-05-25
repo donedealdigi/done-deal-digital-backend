@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -32,6 +33,11 @@ app.set('trust proxy', 1);
 
 // ===== SECURITY & MIDDLEWARE =====
 app.use(helmet());
+
+// cookie-parser — required so req.cookies.* works. Refresh-token endpoint
+// already depends on this. JWT session cookie (audit H-4) also reads
+// from here in authenticate middleware. Must be registered BEFORE routes.
+app.use(cookieParser());
 
 // ===== RATE LIMITING (per security audit 2026-05-25 H-2) =====
 // Strict limiter for auth endpoints (login, register, password reset).
