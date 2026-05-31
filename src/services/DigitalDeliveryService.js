@@ -87,9 +87,9 @@ async function deliverIfDigital(deposit) {
     // Continue — the file is still in their account dashboard.
   }
 
-  // 3. Send the delivery email (best-effort). If it fails — most commonly
-  //    because SES is in sandbox and the recipient isn't verified — fall
-  //    back to an admin alert so manual fulfillment can happen quickly.
+  // 3. Send the delivery email (best-effort). If it fails for any reason
+  //    (transient SES/SMTP error, bad address, throttling), fall back to an
+  //    admin alert so manual fulfillment can happen quickly.
   let customerEmailResult = { sent: false, reason: 'not attempted (no signed URL)' };
   if (signedUrl) {
     try {

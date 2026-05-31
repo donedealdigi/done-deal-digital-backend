@@ -13,6 +13,28 @@ let transporterPromise = null;
 function getTransporter() {
   if (transporterPromise) return transporterPromise;
 
+  // Provider toggle: 'ses' (default) sends via Amazon SES using the EC2 instance
+  // IAM role — no SMTP credentials to store or leak. 'smtp' uses the legacy
+  // SendGrid SMTP creds. To roll back instantly, set EMAIL_PROVIDER=smtp and
+  // restart (env-only, no redeploy needed).
+  const provider = (process.env.EMAIL_PROVIDER || 'ses').toLowerCase();
+
+  if (provider === 'ses') {
+    try {
+      const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+      const sesClient = new SESv2Client({ region: process.env.AWS_REGION || 'us-west-2' });
+      const t = nodemailer.createTransport({ SES: { sesClient, SendEmailCommand } });
+      // SES transport has no SMTP handshake to verify; trust it and let
+      // sendMail() surface any send-time errors (which then hit the existing
+      // admin-fallback path).
+      transporterPromise = Promise.resolve(t);
+      return transporterPromise;
+    } catch (err) {
+      console.warn('⚠️  SES transport init failed, falling back to SMTP:', err.message);
+      // fall through to the SMTP path below
+    }
+  }
+
   const host = process.env.SMTP_HOST;
   const port = parseInt(process.env.SMTP_PORT || '587', 10);
   const user = process.env.SMTP_USER;
@@ -191,10 +213,10 @@ donedealdigital.com
 
 /**
  * Sent to the admin (NOTIFY_EMAIL) when an automatic digital-delivery
- * email to the customer fails — most commonly because SES is still in
- * sandbox and the customer's address isn't on the verified list.
+ * email to the customer fails for any reason (transient send error,
+ * bad/blocked address, throttling).
  *
- * Goes to a verified address so it always lands, even in sandbox.
+ * Goes to the admin's own verified address so it always lands.
  */
 function digitalDeliveryFailureAlert({ customerName, customerEmail, productName, signedUrl, paymentIntentId, failureReason, amount }) {
   const to = process.env.NOTIFY_EMAIL || 'donedealdigital@gmail.com';
